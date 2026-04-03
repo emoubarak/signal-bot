@@ -1,0 +1,23 @@
+# Environment
+.env
+.venv
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# MCP (local config)
+.mcp.json
+
+# Custom prompts (user-specific)
+prompts_custom.py
