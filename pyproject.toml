@@ -1,0 +1,26 @@
+[project]
+name = "signal-llm-bot"
+version = "2.0.0"
+description = "Signal bot backed by OpenRouter: chat, summaries, image generation/editing, voice note transcription"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "signalbot>=2.1.0",
+    "httpx>=0.28",
+    "python-dotenv>=1.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "pytest-mock>=3.14",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.setuptools]
+packages = ["llmbot"]

@@ -21,3 +21,5 @@ __pycache__/
 
 # Custom prompts (user-specific)
 prompts_custom.py
+# Bot data (database, attachments)
+data/

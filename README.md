@@ -1,138 +1,113 @@
 # Signal LLM Bot
 
-A modular Signal bot with LLM integration (OpenAI). It analyzes messages, summarizes discussions, answers questions, and can adopt custom personalities.
+A Signal bot for group chats, powered by [OpenRouter](https://openrouter.ai). Call it by its name and say what you want in plain language: a summary of the conversation, an explanation, a roast, an image ("make a picture of…", "put a hat on this photo" while replying to the photo), what a voice note says. The model decides what to do and calls the right tool. Slash commands remain as shortcuts.
 
-## Prerequisites
+Default models: `anthropic/claude-haiku-5.5` for chat and tool use, `bytedance-seed/seedream-5-0-flash` for images, `google/gemini-3.1-flash-lite` for voice notes. All three are configurable, and the chat model can be switched from Signal.
 
-- Python 3.9+
-- Docker (for `bbernhard/signal-cli-rest-api`)
-- A **second Signal number** (for the bot)
-- Environment variables: `SIGNAL_SERVICE`, `PHONE_NUMBER`, `OPENAI_API_KEY`
+## How it works
 
-## Quick Start
+- Every message of every allowed chat is stored in SQLite (`data/bot.sqlite3`) with its Signal identity (author, timestamp), so the bot knows who said what, when, and in reply to what, and still does after a restart.
+- Voice notes are transcribed on arrival (converted with ffmpeg, sent to an audio-capable model) and stored as text, prefixed 🎤. Images are saved to `data/attachments/` so they can be edited later.
+- A command works on a precise selection, not "the last 50 lines":
+  - **Reply to a message** with a command: that message is the target, the 10 messages before it are context.
+  - `/command 20`: the last 20 messages.
+  - `/resume` alone: everything since the previous `/resume` in that chat.
+  - `/analyse`, `/roast`, `/debat` alone: the last message of someone else, with recent context.
+  - `/command some text`: adds an instruction.
+- Commands and the bot's own prompts are never fed back as conversation; the bot's answers are.
+- The model receives dated, named lines (`[14:02] Paul (répond à Léa) : …`), plus `[CIBLE]` and `[DEMANDE]` blocks, under a system prompt that asks for plain text sized for Signal.
+- Natural-language mode (`llmbot/agent.py`): when the bot is called by name (`BOT_NAME`, `BOT_ALIASES`, accent-insensitive), mentioned, replied to, or written to in private, the model gets the last 30 messages, the reply chain as user/assistant turns, the quoted message as `[CIBLE]`, attached images, and four tools: `get_history` (more or older messages), `generate_image` (with `img1`, `img2`… identifiers of images seen in the conversation as references, so "combine our two photos" works), `get_spend`, `set_chat_model`. Up to 5 tool rounds. If the name is only mentioned in passing, the model answers `[rien]` and the bot stays silent.
+- Replies cut by the token limit are retried once with a bigger budget. Model errors are reported in the chat. Per-person rate limits (`RATE_LIMIT_PER_HOUR`, `IMAGES_PER_DAY`) and allow-lists keep the bill in check; `/cout` shows what has been spent.
 
-### 1. Link the bot account to `signal-cli-rest-api`
+## Commands (shortcuts)
 
-```bash
-docker run -d \
-  --name signal-rest \
-  -p 8080:8080 \
-  -v signal-data:/home/.local/share/signal-cli \
-  -e MODE=json-rpc \
-  bbernhard/signal-cli-rest-api:latest
-```
+| Command | What it does |
+|---|---|
+| `/resume [N]` | Summary since the previous `/resume`, or of the last N messages |
+| `/analyse [N] [text]` | Structured analysis of a message or exchange |
+| `/roast [N] [text]` | Roast the author of the target message |
+| `/debat` | Two opposing takes on the target message |
+| `/question [N] <question>` | Neutral, factual answer, with the chat as context |
+| `/perso <character> : <message>` | Answer in character (or reply to a message with `/perso <character> :`) |
+| `/image [ratio] <description>` | Generate an image (`1:1`, `16:9`, `9:16`, `4:3`, …). In reply to an image, or with an image attached: edit it |
+| `/edit <change>` | Same as `/image` but refuses to run without a reference image |
+| `/transcris` | In reply to a voice note: post its transcription |
+| `/modele [slug\|reset]` | Show or change the chat model (restricted to `ADMIN_NUMBERS` if set) |
+| `/cout` | Spend today and over 30 days, for this chat and overall |
+| `/aide` | Help |
 
-Open http://127.0.0.1:8080/v1/qrcodelink?device_name=local and scan the QR code with your Signal app (using the bot's account).
+Custom prompts: copy `prompts_custom.example.py` to `prompts_custom.py`; every uppercase string becomes a command (`AVOCAT_DU_DIABLE` → `/avocat-du-diable`), listed in `/aide`.
 
-### 2. Configure environment
+## Setup
 
-```bash
-cp .env.example .env
-# Edit .env with your values
-```
+Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/), ffmpeg (for voice notes), Docker, a second phone number for the bot, an OpenRouter key.
 
-### 3. Install dependencies and run
+1. Run [signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) (0.101 or newer) in json-rpc mode and link the bot's number:
 
-```bash
-pip install -r requirements.txt
-python bot.py
-```
+   ```bash
+   docker run -d --name signal-rest -p 8080:8080 \
+     -v signal-data:/home/.local/share/signal-cli \
+     -e MODE=json-rpc bbernhard/signal-cli-rest-api:latest
+   ```
 
-## Available Commands
+   Open http://127.0.0.1:8080/v1/qrcodelink?device_name=bot and scan the QR code from the Signal app logged in with the bot's number.
 
-| Command | Description |
-|---------|-------------|
-| `/analyse` | Logical and structured analysis |
-| `/resume` | Summarize messages |
-| `/roast` | Roast the message author |
-| `/question` | Neutral, factual Q&A |
-| `/debat` | Generate two opposing viewpoints |
-| `/perso` | Custom personality (see below) |
-| `/help` | Show all available commands |
+2. Configure and run:
 
-### How Commands Work
+   ```bash
+   cp .env.example .env   # fill SIGNAL_SERVICE, PHONE_NUMBER, OPENROUTER_API_KEY
+   uv sync
+   uv run python bot.py
+   ```
 
-- **Reply to a message** → targets THAT specific message
-- `/command N` → targets the last N messages
-- `/command` (no argument) → uses full history (up to limit)
+3. Add the bot to a group, send `/aide`.
 
-### `/perso` - Custom Personality
-
-Create any personality on the fly:
-
-```
-/perso a drunk pirate: what's the meaning of life?
-/perso a cynical philosopher: explain quantum physics
-/perso an enthusiastic sports commentator: analyze this argument
-```
-
-## Adding Custom Prompts
-
-You can create permanent custom prompts that become new commands.
-
-### 1. Create `prompts_custom.py`
-
-Copy the example file:
-
-```bash
-cp prompts_custom.example.py prompts_custom.py
-```
-
-### 2. Add your prompts
-
-Each prompt variable becomes a command (underscores → hyphens):
-
-```python
-# prompts_custom.py
-
-MY_PROMPT = """
-Your prompt description here.
-Instructions for the LLM...
-"""
-
-ANOTHER_PROMPT = """
-Another personality or utility...
-"""
-```
-
-This creates:
-- `/my-prompt`
-- `/another-prompt`
-
-### 3. Restart the bot
-
-Custom prompts are automatically loaded at startup and appear in `/help`.
-
-## Configuration
-
-Environment variables (in `.env`):
+### Configuration
 
 | Variable | Default | Description |
-|----------|---------|-------------|
-| `SIGNAL_SERVICE` | required | Signal CLI REST API address (e.g., `127.0.0.1:8080`) |
-| `PHONE_NUMBER` | required | Bot's Signal number (e.g., `+33700000000`) |
-| `OPENAI_API_KEY` | required | OpenAI API key |
-| `OPENAI_MODEL` | `gpt-4o-mini` | Model to use |
-| `OPENAI_TEMPERATURE` | `1.2` | Response creativity |
-| `OPENAI_MAX_OUTPUT_TOKENS` | `800` | Max response length |
-| `MAX_CONTEXT_MESSAGES` | `50` | Max messages in history |
-| `HARD_INPUT_CHAR_LIMIT` | `16000` | Max input size |
+|---|---|---|
+| `SIGNAL_SERVICE` | required | signal-cli-rest-api address, e.g. `127.0.0.1:8080` |
+| `PHONE_NUMBER` | required | The bot's number |
+| `OPENROUTER_API_KEY` | required | OpenRouter key |
+| `OPENROUTER_MODEL` | `anthropic/claude-haiku-5.5` | Chat model (any text-output slug) |
+| `IMAGE_MODEL` | `bytedance-seed/seedream-5-0-flash` | Image model (OpenRouter Image API) |
+| `TRANSCRIBE_MODEL` | `google/gemini-3.1-flash-lite` | Audio-input model for voice notes |
+| `BOT_NAME` | `Bot` | The bot's name: saying it in a message addresses the bot |
+| `BOT_ALIASES` | none | Other names that address the bot, comma-separated |
+| `ALLOWED_GROUPS` | all | Comma-separated group names or ids |
+| `ALLOWED_NUMBERS` | all | Comma-separated numbers allowed in private chat |
+| `ADMIN_NUMBERS` | anyone | Who may run `/modele <slug>` |
+| `RATE_LIMIT_PER_HOUR` | `20` | Chat/command calls per person per hour (0 = unlimited) |
+| `IMAGES_PER_DAY` | `10` | Images per person per day |
+| `MAX_CONTEXT_MESSAGES` | `50` | Upper bound on messages given to the model |
+| `MAX_INPUT_CHARS` | `24000` | Oldest context lines are dropped beyond this |
+| `MAX_OUTPUT_TOKENS` | `1000` | Reply budget (doubled once if the reply is cut) |
+| `TIMEZONE` | `Europe/Paris` | For the timestamps shown to the model |
+| `DATA_DIR` | `data` | SQLite database and attachments |
+| `DESCRIBE_IMAGES` | `false` | Describe every incoming image with the chat model (one vision call each) |
+| `ATTACHMENT_RETENTION_DAYS` | `30` | Attachments older than this are deleted at startup |
 
-## Architecture
+Indicative costs (OpenRouter, October 2026): a summary with Claude Haiku 5.5 ≈ $0.0001, a one-minute voice note ≈ $0.001, an image or an edit with Seedream 5.0 Flash = $0.018.
+
+## Layout
 
 ```
-signal-bot/
-├── bot.py              # Main entry point
-├── command.py          # Command handler + custom prompt loader
-├── prompts.py          # Core prompts
-├── prompts_custom.py   # Your custom prompts (optional)
-├── config.py           # Configuration
-├── llm/
-│   └── openai_client.py
-├── utils/
-│   └── history.py
-└── patches/            # Signalbot library patches
+bot.py                  entry point
+llmbot/
+  config.py             Settings from environment
+  store.py              SQLite: messages, usage, settings
+  openrouter.py         chat, audio input, image generation (httpx)
+  media.py              attachments on disk, ffmpeg conversion
+  prompts.py            system prompts
+  commands.py           command registry, custom prompts, argument parsing
+  context.py            formatting of the conversation for the model
+  handler.py            the Signal handler: record, addressing, commands
+  agent.py              natural-language mode: tools and the model loop
+  syncflag.py           tells the bot's own (sync) messages apart
+tests/                  pytest, signal-cli-rest-api and OpenRouter stubbed
 ```
+
+Tests: `uv run pytest`.
 
 ## License
 
