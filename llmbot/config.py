@@ -21,7 +21,7 @@ class Settings:
     phone_number: str
     openrouter_api_key: str
 
-    chat_model: str = "anthropic/claude-haiku-5.5"
+    chat_model: str = "deepseek/deepseek-v4.1-flash"
     image_model: str = "bytedance-seed/seedream-5-0-flash"
     transcribe_model: str = "google/gemini-3.1-flash-lite"
 

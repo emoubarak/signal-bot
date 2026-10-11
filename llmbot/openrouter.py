@@ -110,6 +110,8 @@ class OpenRouter:
             "temperature": temperature,
             "max_tokens": max_tokens,
             "usage": {"include": True},
+            # cheapest provider that supports the request (tools, images); open models vary up to 10x
+            "provider": {"sort": "price"},
         }
         if tools:
             payload["tools"] = tools

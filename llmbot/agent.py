@@ -103,7 +103,8 @@ class Agent:
         return (
             f"Tu es {s.bot_name}, un participant{where} sur Signal. On s'adresse à toi en t'appelant par ton nom, "
             "en te mentionnant, en répondant à un de tes messages ou en privé. Tu comprends la demande en langage "
-            "naturel et tu agis, sans demander de confirmation quand c'est clair.\n\n"
+            "naturel et tu agis, sans demander de confirmation quand c'est clair.\n"
+            + prompts.PERSONALITY + "\n"
             "Ce que tu sais faire :\n"
             "- résumer la discussion (une période, les N derniers messages, « depuis hier ») : les derniers messages "
             "sont fournis ci-dessous, appelle get_history s'il t'en faut plus ou de plus anciens ;\n"
@@ -216,7 +217,7 @@ class Agent:
             month = int((now - timedelta(days=30)).timestamp() * 1000)
             return (f"Aujourd'hui : {self.store.cost_since(day, req.chat_id):.3f} $ ici, "
                     f"{self.store.cost_since(day):.3f} $ au total. 30 jours : "
-                    f"{self.store.cost_since(month, req.chat_id):.2f} $ ici, {self.store.cost_since(month):.2f} $ au total.")
+                    f"{self.store.cost_since(month, req.chat_id):.3f} $ ici, {self.store.cost_since(month):.3f} $ au total.")
 
         if name == "set_chat_model":
             if self.settings.admin_numbers and not req.is_admin:

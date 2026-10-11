@@ -2,7 +2,7 @@
 
 A bot that lives in your Signal groups. Call it by its name and say what you want: a summary of what was said, an explanation, a roast, a picture, a change to a photo, what a voice note says. No commands. The model reads the conversation, decides what to do, and uses its tools.
 
-Runs on [OpenRouter](https://openrouter.ai) with `anthropic/claude-haiku-5.5` for chat and tool use, `bytedance-seed/seedream-5-0-flash` for images, `google/gemini-3.1-flash-lite` for voice notes. All three can be changed.
+Runs on [OpenRouter](https://openrouter.ai) with `deepseek/deepseek-v4.1-flash` for chat and tool use, `bytedance-seed/seedream-5-0-flash` for images, `google/gemini-3.1-flash-lite` for voice notes. All three can be changed.
 
 ## What it does
 
@@ -58,7 +58,7 @@ You need Python 3.11+, [uv](https://docs.astral.sh/uv/), ffmpeg (voice notes and
 | `OPENROUTER_API_KEY` | required | OpenRouter key |
 | `BOT_NAME` | `Bot` | The bot's name; saying it in a message addresses the bot |
 | `BOT_ALIASES` | none | Other names that address the bot, comma-separated |
-| `OPENROUTER_MODEL` | `anthropic/claude-haiku-5.5` | Chat model, any OpenRouter slug with text output and tool use |
+| `OPENROUTER_MODEL` | `deepseek/deepseek-v4.1-flash` | Chat model, any OpenRouter slug with text output and tool use |
 | `IMAGE_MODEL` | `bytedance-seed/seedream-5-0-flash` | Image model, from the OpenRouter Image API |
 | `TRANSCRIBE_MODEL` | `google/gemini-3.1-flash-lite` | Audio-input model for voice notes |
 | `ALLOWED_GROUPS` | all | Group names or ids the bot listens to, comma-separated |
@@ -73,7 +73,7 @@ You need Python 3.11+, [uv](https://docs.astral.sh/uv/), ffmpeg (voice notes and
 | `DESCRIBE_IMAGES` | `false` | Describe every incoming image with the chat model (one vision call each) |
 | `ATTACHMENT_RETENTION_DAYS` | `30` | Attachments older than this are deleted at startup |
 
-Indicative costs (OpenRouter, October 2026): a request with Claude Haiku 5.5 ≈ $0.0003, a one-minute voice note ≈ $0.001, an image or an edit with Seedream 5.0 Flash $0.018.
+Indicative costs (OpenRouter, October 2026): a request with DeepSeek V4.1 Flash ≈ $0.0001 (the cheapest provider is picked), a one-minute voice note ≈ $0.001, an image or an edit with Seedream 5.0 Flash $0.018.
 
 ## How it works
 
