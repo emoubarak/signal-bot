@@ -25,3 +25,6 @@ prompts_custom.py
 data/
 # Database backups
 signal-bot-backups/
+# Auto-deploy state and log
+deploy/.failed
+deploy/autodeploy.log
