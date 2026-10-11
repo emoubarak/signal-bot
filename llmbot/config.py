@@ -40,8 +40,8 @@ class Settings:
     rate_limit_per_hour: int = 20
     images_per_day: int = 10
 
-    max_context_messages: int = 50
-    max_input_chars: int = 24000
+    # Recent messages given to the model with every request (it can read more with its history tool)
+    context_messages: int = 30
     max_output_tokens: int = 1000
 
     # Ask the chat model for a one-line description of every incoming image
@@ -71,8 +71,7 @@ class Settings:
             admin_numbers=_list(e.get("ADMIN_NUMBERS")),
             rate_limit_per_hour=int(e.get("RATE_LIMIT_PER_HOUR") or cls.rate_limit_per_hour),
             images_per_day=int(e.get("IMAGES_PER_DAY") or cls.images_per_day),
-            max_context_messages=int(e.get("MAX_CONTEXT_MESSAGES") or cls.max_context_messages),
-            max_input_chars=int(e.get("MAX_INPUT_CHARS") or cls.max_input_chars),
+            context_messages=int(e.get("CONTEXT_MESSAGES") or cls.context_messages),
             max_output_tokens=int(e.get("MAX_OUTPUT_TOKENS") or cls.max_output_tokens),
             describe_images=_bool(e.get("DESCRIBE_IMAGES"), cls.describe_images),
             attachment_retention_days=int(e.get("ATTACHMENT_RETENTION_DAYS") or cls.attachment_retention_days),

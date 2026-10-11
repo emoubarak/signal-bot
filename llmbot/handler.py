@@ -258,7 +258,7 @@ class LLMHandler(DataMessageHandler):
             return
         thread = self.store.conversation_thread(rec.chat_id, rec.ts) or [rec]
         quoted = self._quoted(c, rec)
-        window = self.store.recent(rec.chat_id, 30, before_ts=thread[0].ts)
+        window = self.store.recent(rec.chat_id, self.settings.context_messages, before_ts=thread[0].ts)
         images_used = self.store.count_usage(rec.author_id, USAGE_IMAGE, int(time.time() * 1000) - 86_400_000)
         req = AgentRequest(
             chat_id=rec.chat_id, chat_name=self._chat_name(c), user_id=rec.author_id,
