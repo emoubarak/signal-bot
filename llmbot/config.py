@@ -49,6 +49,9 @@ class Settings:
     describe_images: bool = False
     attachment_retention_days: int = 30
 
+    # Uptime Kuma push URL, pinged every minute while signal-cli answers. Empty = off.
+    kuma_push_url: str = ""
+
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> Settings:
         e = os.environ if env is None else env
@@ -75,4 +78,5 @@ class Settings:
             max_output_tokens=int(e.get("MAX_OUTPUT_TOKENS") or cls.max_output_tokens),
             describe_images=_bool(e.get("DESCRIBE_IMAGES"), cls.describe_images),
             attachment_retention_days=int(e.get("ATTACHMENT_RETENTION_DAYS") or cls.attachment_retention_days),
+            kuma_push_url=e.get("KUMA_PUSH_URL") or "",
         )

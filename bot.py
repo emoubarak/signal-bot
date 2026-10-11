@@ -1,6 +1,9 @@
 import logging
+import threading
+import time
 from pathlib import Path
 
+import httpx
 from dotenv import load_dotenv
 from signalbot import SignalBot
 
@@ -12,6 +15,21 @@ from llmbot.personas import Registry
 from llmbot.store import Store
 
 ROOT = Path(__file__).parent
+
+
+def heartbeat(push_url: str, signal_service: str) -> None:
+    """Push "up" to Uptime Kuma every minute while signal-cli answers, "down" when it does not."""
+    log = logging.getLogger("llmbot.heartbeat")
+    while True:
+        try:
+            ok = httpx.get(f"http://{signal_service}/v1/health", timeout=10).is_success
+        except httpx.HTTPError:
+            ok = False
+        try:
+            httpx.get(push_url, params={"status": "up" if ok else "down", "msg": "OK" if ok else "signal-cli unreachable"}, timeout=10)
+        except httpx.HTTPError as exc:
+            log.warning("kuma push failed: %s", exc)
+        time.sleep(60)
 
 
 def main() -> None:
@@ -48,6 +66,8 @@ def main() -> None:
         contacts=settings.allowed_numbers or True,
         groups=settings.allowed_groups or True,
     )
+    if settings.kuma_push_url:
+        threading.Thread(target=heartbeat, args=(settings.kuma_push_url, settings.signal_service), daemon=True).start()
     bot.start()
 
 

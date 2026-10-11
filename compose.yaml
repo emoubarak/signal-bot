@@ -1,0 +1,30 @@
+# Signal bot + signal-cli-rest-api. The signal-cli port listens on the host's
+# Tailscale address only (set SIGNAL_BIND in .env), for linking the account.
+services:
+  signal-rest:
+    image: bbernhard/signal-cli-rest-api:latest
+    container_name: signal-rest
+    restart: unless-stopped
+    environment:
+      MODE: json-rpc
+    ports:
+      - "${SIGNAL_BIND:-127.0.0.1}:8086:8080"
+    volumes:
+      - signal-data:/home/.local/share/signal-cli
+
+  bot:
+    build: .
+    container_name: signal-bot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SIGNAL_SERVICE: signal-rest:8080
+      DATA_DIR: /app/data
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - signal-rest
+
+volumes:
+  signal-data:
+    external: true
