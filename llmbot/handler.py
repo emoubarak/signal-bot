@@ -1,6 +1,5 @@
-"""The single Signal handler: records every message, then runs commands or
-answers when the bot is addressed. One handler so recording always happens
-before the command reads the store."""
+"""The single Signal handler: records every message, then lets the agent
+answer when the bot is addressed (by name, mention, reply or in private)."""
 from __future__ import annotations
 
 import asyncio
@@ -17,16 +16,11 @@ from signalbot import DataMessageContext, DataMessageHandler, EditMessage, SendM
 
 from llmbot import prompts, syncflag
 from llmbot.agent import Agent, AgentRequest
-from llmbot.commands import (
-    PromptCommand, Registry, parse_count_and_request, parse_image_args, split_command,
-)
+from llmbot.personas import Registry
 from llmbot.config import Settings
-from llmbot.context import build_payload, format_message
-from llmbot.media import audio_for_model, image_for_model, is_audio, is_image, save_attachment
+from llmbot.media import audio_for_model, is_audio, is_image, save_attachment
 from llmbot.openrouter import OpenRouter, OpenRouterError, data_url
-from llmbot.store import (
-    KIND_BOT, KIND_COMMAND, KIND_IMAGE, KIND_TEXT, KIND_VOICE, Store, StoredMessage,
-)
+from llmbot.store import KIND_BOT, KIND_IMAGE, KIND_TEXT, KIND_VOICE, Store, StoredMessage
 from llmbot.syncflag import is_sync
 
 logger = logging.getLogger("llmbot.handler")
@@ -35,8 +29,6 @@ USAGE_CHAT = "chat"
 USAGE_IMAGE = "image"
 USAGE_TRANSCRIBE = "transcribe"
 USAGE_DESCRIBE = "describe"
-
-SPECIAL_COMMANDS = {"aide", "help", "image", "edit", "transcris", "perso", "modele", "cout"}
 
 
 class LLMHandler(DataMessageHandler):
@@ -70,16 +62,7 @@ class LLMHandler(DataMessageHandler):
 
         async with self._locks[self._chat_id(c)]:
             rec = await self._record(c)
-        if rec is None:
-            return
-
-        parsed = split_command(rec.text) if rec.is_command else None
-        if parsed:
-            name, rest = parsed
-            if name in SPECIAL_COMMANDS or self.registry.get(name):
-                await self._dispatch(c, rec, name, rest)
-            # other "/words" are not ours (another bot, a path…): stay silent
-        elif self._addressed_to_bot(c, rec):
+        if rec is not None and self._addressed_to_bot(c, rec):
             await self._converse(c, rec)
 
     # ── recording ───────────────────────────────────────────────────────────
@@ -121,9 +104,7 @@ class LLMHandler(DataMessageHandler):
                 transcript = await self._transcribe(c, path, att.content_type)
 
         images = [a for a in attachments if is_image(a["content_type"])]
-        if text.startswith("/"):
-            kind = KIND_COMMAND  # an attached image stays available as /image reference
-        elif transcript is not None:
+        if transcript is not None:
             kind = KIND_VOICE
             text = f"{transcript} — {text}" if text else transcript
         elif images:
@@ -187,8 +168,8 @@ class LLMHandler(DataMessageHandler):
 
     def _addressed_to_bot(self, c: DataMessageContext, rec: StoredMessage) -> bool:
         msg = c.message
-        if self._is_self(c):
-            return False
+        if self._is_self(c):  # from the bot's own phone: only an explicit call by name
+            return msg.is_group() and bool(self._name_re.search(_fold(rec.text)))
         if msg.is_private():
             return True
         for m in msg.mentions or []:
@@ -205,7 +186,7 @@ class LLMHandler(DataMessageHandler):
         return False
 
     def _quoted(self, c: DataMessageContext, rec: StoredMessage) -> StoredMessage | None:
-        """The message the command replies to, from the store or rebuilt from the quote."""
+        """The message the request replies to, from the store or rebuilt from the quote."""
         quote = c.message.quote
         if quote is None:
             return None
@@ -229,9 +210,9 @@ class LLMHandler(DataMessageHandler):
     # ── sending ─────────────────────────────────────────────────────────────
 
     async def _say(self, c: DataMessageContext, rec: StoredMessage, text: str, *,
-                   attachment: tuple[bytes, str] | None = None, attachments: list[tuple[bytes, str]] | None = None,
+                   attachments: list[tuple[bytes, str]] | None = None,
                    kind: str = KIND_BOT, stored_text: str | None = None) -> StoredMessage | None:
-        files = list(attachments or []) + ([attachment] if attachment else [])
+        files = list(attachments or [])
         send = SendMessage(text=text)
         if files:
             send.base64_attachments = [data_url(*f) for f in files]
@@ -260,10 +241,7 @@ class LLMHandler(DataMessageHandler):
     async def _within_limit(self, c: DataMessageContext, rec: StoredMessage, kind: str) -> bool:
         if self._is_self(c):
             return True
-        if kind == USAGE_IMAGE:
-            limit, window, label = self.settings.images_per_day, 86_400_000, "images par jour"
-        else:
-            limit, window, label = self.settings.rate_limit_per_hour, 3_600_000, "demandes par heure"
+        limit, window, label = self.settings.rate_limit_per_hour, 3_600_000, "demandes par heure"
         if limit <= 0:
             return True
         used = self.store.count_usage(rec.author_id, kind, int(time.time() * 1000) - window)
@@ -271,35 +249,6 @@ class LLMHandler(DataMessageHandler):
             await self._say(c, rec, f"Doucement : limite de {limit} {label} atteinte.")
             return False
         return True
-
-    async def _ask(self, c: DataMessageContext, rec: StoredMessage, *, system: str,
-                   messages: list[dict], temperature: float) -> str | None:
-        """Run the chat model with typing indicator, rate limit and error handling.
-        Returns the text, or None after having told the user what went wrong."""
-        if not await self._within_limit(c, rec, USAGE_CHAT):
-            return None
-        full = [{"role": "system", "content": system.strip() + "\n" + prompts.COMMON_RULES.strip()}, *messages]
-        await c.start_typing()
-        try:
-            result = await self.llm.chat(
-                model=self.chat_model, messages=full, temperature=temperature,
-                max_tokens=self.settings.max_output_tokens,
-            )
-        except OpenRouterError as e:
-            logger.error("chat failed: %s", e)
-            await self._say(c, rec, f"Le modèle n'a pas répondu ({e}).")
-            return None
-        except Exception:
-            logger.exception("chat failed")
-            await self._say(c, rec, "Erreur inattendue, réessaie dans un instant.")
-            return None
-        finally:
-            await c.stop_typing()
-        self._usage(c, USAGE_CHAT, result.model, result.cost)
-        if not result.text:
-            await self._say(c, rec, "Le modèle a renvoyé une réponse vide.")
-            return None
-        return result.text + (" […]" if result.truncated else "")
 
     # ── conversation with the bot ───────────────────────────────────────────
 
@@ -340,205 +289,6 @@ class LLMHandler(DataMessageHandler):
                             stored_text=f"[image générée] {result.text}".strip())
         else:
             await self._say(c, rec, result.text)
-
-    # ── commands ────────────────────────────────────────────────────────────
-
-    async def _dispatch(self, c: DataMessageContext, rec: StoredMessage, name: str, rest: str) -> None:
-        if name in ("aide", "help"):
-            await self._cmd_help(c, rec)
-        elif name in ("image", "edit"):
-            await self._cmd_image(c, rec, rest, require_reference=(name == "edit"))
-        elif name == "transcris":
-            await self._cmd_transcribe(c, rec)
-        elif name == "perso":
-            await self._cmd_perso(c, rec, rest)
-        elif name == "modele":
-            await self._cmd_model(c, rec, rest)
-        elif name == "cout":
-            await self._cmd_cost(c, rec)
-        else:
-            cmd = self.registry.get(name)
-            if cmd:
-                await self._cmd_prompt(c, rec, cmd, rest)
-
-    async def _cmd_help(self, c: DataMessageContext, rec: StoredMessage) -> None:
-        lines = [f"Appelle-moi par mon nom ({self.settings.bot_name}), mentionne-moi, réponds à un de mes messages "
-                 "ou écris-moi en privé, et dis ce que tu veux : un résumé, une explication, un roast, une image "
-                 "(« fais une image de… », « mets un chapeau sur cette photo » en répondant à l'image), ce que dit "
-                 "un vocal… Les raccourcis ci-dessous font pareil sans passer par moi.", "", "Raccourcis :"]
-        for cmd in self.registry.builtin():
-            lines.append(f"/{cmd.name} — {cmd.description}")
-        lines += [
-            "/perso <personnage> : <message> — réponse dans la peau d'un personnage",
-            "/image [format] <description> — génère une image (formats : 1:1, 16:9, 9:16, 4:3…) ; en réponse à une image, la modifie",
-            "/transcris — en réponse à un vocal, renvoie sa transcription",
-            "/modele [slug|reset] — affiche ou change le modèle de chat",
-            "/cout — dépenses du jour et du mois",
-        ]
-        custom = self.registry.custom()
-        if custom:
-            lines.append("")
-            lines.append("Personnalisées :")
-            lines += [f"/{cmd.name} — {cmd.description.removeprefix('prompt personnalisé : ')}" for cmd in custom]
-        lines += [
-            "",
-            "Comment ça marche :",
-            "- Répondre à un message avec une commande la fait porter sur ce message.",
-            "- /commande 20 porte sur les 20 derniers messages.",
-            "- /commande texte ajoute une consigne.",
-            "- Les vocaux sont transcrits et compris comme des messages.",
-            f"- Limites : {self.settings.rate_limit_per_hour} demandes par heure, {self.settings.images_per_day} images par jour, par personne.",
-        ]
-        await self._say(c, rec, "\n".join(lines))
-
-    async def _cmd_prompt(self, c: DataMessageContext, rec: StoredMessage, cmd: PromptCommand, rest: str) -> None:
-        n, request = parse_count_and_request(rest)
-        max_ctx = self.settings.max_context_messages
-        quoted = self._quoted(c, rec)
-        target: StoredMessage | None = None
-
-        if quoted is not None:
-            target = quoted
-            conversation = self.store.recent(rec.chat_id, 10, before_ts=quoted.ts)
-        elif n is not None:
-            conversation = self.store.recent(rec.chat_id, min(max(n, 1), max_ctx), before_ts=rec.ts)
-        elif cmd.since_last:
-            last = self.store.last_command_ts(rec.chat_id, f"/{cmd.name}", before_ts=rec.ts)
-            conversation = self.store.recent(rec.chat_id, max_ctx, before_ts=rec.ts, after_ts=last)
-            if last is not None:  # the answer to the previous call is not news
-                conversation = [m for m in conversation if not (m.is_bot and m.reply_to_ts and m.reply_to_ts <= last)]
-            if not conversation and last is not None:
-                await self._say(c, rec, f"Rien de nouveau depuis le dernier /{cmd.name}.")
-                return
-        else:
-            conversation = self.store.recent(rec.chat_id, cmd.default_window, before_ts=rec.ts)
-
-        if cmd.needs_target and target is None and conversation:
-            candidates = [m for m in conversation if not m.is_bot and m.author_id != rec.author_id] or \
-                         [m for m in conversation if not m.is_bot] or conversation
-            target = candidates[-1]
-            conversation = [m for m in conversation if m.ts != target.ts]
-
-        if not conversation and target is None and not request:
-            await self._say(c, rec, f"Rien à traiter : réponds à un message, ou /{cmd.name} 20 pour les 20 derniers, "
-                                    f"ou /{cmd.name} <texte>.")
-            return
-
-        payload = build_payload(
-            conversation=conversation, target=target, request=request or None, chat_name=self._chat_name(c),
-            tz=self.tz, max_chars=self.settings.max_input_chars, reply_name=self._reply_name,
-        )
-        answer = await self._ask(c, rec, system=cmd.prompt, messages=[{"role": "user", "content": payload}],
-                                 temperature=cmd.temperature)
-        if answer:
-            await self._say(c, rec, answer)
-
-    async def _cmd_perso(self, c: DataMessageContext, rec: StoredMessage, rest: str) -> None:
-        if ":" not in rest:
-            await self._say(c, rec, "Usage : /perso <personnage> : <message>\nEx. : /perso un pirate ivre : c'est quoi le sens de la vie ?")
-            return
-        persona, request = (p.strip() for p in rest.split(":", 1))
-        quoted = self._quoted(c, rec)
-        if not request and quoted is None:
-            await self._say(c, rec, "Il me faut un message après « : », ou réponds à un message.")
-            return
-        conversation = self.store.recent(rec.chat_id, 10, before_ts=(quoted or rec).ts)
-        payload = build_payload(conversation=conversation, target=quoted, request=request or None,
-                                chat_name=self._chat_name(c), tz=self.tz, max_chars=self.settings.max_input_chars,
-                                reply_name=self._reply_name)
-        system = f"Personnage à incarner : {persona}\n\n{prompts.PERSO}"
-        answer = await self._ask(c, rec, system=system, messages=[{"role": "user", "content": payload}], temperature=1.0)
-        if answer:
-            await self._say(c, rec, answer)
-
-    async def _cmd_transcribe(self, c: DataMessageContext, rec: StoredMessage) -> None:
-        quoted = self._quoted(c, rec)
-        if quoted is None or quoted.kind != KIND_VOICE:
-            await self._say(c, rec, "Réponds à un vocal avec /transcris.")
-            return
-        await self._say(c, rec, f"🎤 {quoted.author_name} : {quoted.text}")
-
-    async def _cmd_image(self, c: DataMessageContext, rec: StoredMessage, rest: str, *, require_reference: bool) -> None:
-        ratio, prompt = parse_image_args(rest)
-        references: list[tuple[bytes, str]] = []
-        quoted = self._quoted(c, rec)
-        for source in (quoted, rec):
-            if source is None:
-                continue
-            for img in source.images():
-                path = Path(img["path"])
-                if path.exists():
-                    references.append(image_for_model(path.read_bytes(), img["content_type"]))
-        if require_reference and not references:
-            await self._say(c, rec, "Réponds à une image avec /edit <modification>.")
-            return
-        if not prompt:
-            await self._say(c, rec, "Usage : /image [1:1|16:9|9:16|4:3…] <description>\n"
-                                    "En réponse à une image : /image <modification à apporter>.")
-            return
-        if not await self._within_limit(c, rec, USAGE_IMAGE):
-            return
-
-        await c.start_typing()
-        try:
-            result = await self.llm.generate_image(
-                model=self.settings.image_model, prompt=prompt,
-                aspect_ratio=ratio or ("auto" if references else "1:1"), references=references[:4] or None,
-            )
-        except OpenRouterError as e:
-            logger.error("image failed: %s", e)
-            await self._say(c, rec, f"Image impossible ({e}).")
-            return
-        except Exception:
-            logger.exception("image failed")
-            await self._say(c, rec, "Erreur inattendue pendant la génération.")
-            return
-        finally:
-            await c.stop_typing()
-        self._usage(c, USAGE_IMAGE, result.model, result.cost)
-        label = "image modifiée" if references else "image générée"
-        await self._say(c, rec, "", attachment=(result.data, result.media_type), kind=KIND_IMAGE,
-                        stored_text=f"[{label} : {prompt}]")
-
-    async def _cmd_model(self, c: DataMessageContext, rec: StoredMessage, rest: str) -> None:
-        if not rest:
-            override = self.store.get_setting("chat_model")
-            await self._say(c, rec, f"Chat : {self.chat_model}{' (par défaut : ' + self.settings.chat_model + ')' if override else ''}\n"
-                                    f"Images : {self.settings.image_model}\nVocaux : {self.settings.transcribe_model}\n"
-                                    "Changer : /modele <slug OpenRouter> ou /modele reset")
-            return
-        admins = self.settings.admin_numbers
-        if admins and c.message.source_number not in admins and not self._is_self(c):
-            await self._say(c, rec, "Seuls les admins peuvent changer le modèle.")
-            return
-        if rest.lower() == "reset":
-            self.store.set_setting("chat_model", None)
-            await self._say(c, rec, f"Modèle de chat remis à {self.settings.chat_model}.")
-            return
-        slug = rest.split()[0]
-        try:
-            models = await self.llm.models()
-        except OpenRouterError as e:
-            await self._say(c, rec, f"Impossible de vérifier le modèle ({e}).")
-            return
-        info = models.get(slug)
-        if info is None:
-            await self._say(c, rec, f"Modèle inconnu sur OpenRouter : {slug}")
-            return
-        if "text" not in info.output_modalities:
-            await self._say(c, rec, f"{slug} ne produit pas de texte.")
-            return
-        self.store.set_setting("chat_model", slug)
-        vision = "image" in info.input_modalities
-        await self._say(c, rec, f"Modèle de chat : {slug} ({info.name}){'' if vision else ' — ne lit pas les images'}")
-
-    async def _cmd_cost(self, c: DataMessageContext, rec: StoredMessage) -> None:
-        now = datetime.now(self.tz)
-        day = int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
-        month = int((now - timedelta(days=30)).timestamp() * 1000)
-        await self._say(c, rec,
-                        f"Aujourd'hui : {self.store.cost_since(day, rec.chat_id):.3f} $ ici, {self.store.cost_since(day):.3f} $ au total\n"
-                        f"30 jours : {self.store.cost_since(month, rec.chat_id):.2f} $ ici, {self.store.cost_since(month):.2f} $ au total")
 
 
 def _fold(text: str) -> str:

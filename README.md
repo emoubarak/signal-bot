@@ -1,42 +1,30 @@
 # Signal LLM Bot
 
-A Signal bot for group chats, powered by [OpenRouter](https://openrouter.ai). Call it by its name and say what you want in plain language: a summary of the conversation, an explanation, a roast, an image ("make a picture of…", "put a hat on this photo" while replying to the photo), what a voice note says. The model decides what to do and calls the right tool. Slash commands remain as shortcuts.
+A Signal bot for group chats, powered by [OpenRouter](https://openrouter.ai). Call it by its name and say what you want in plain language: a summary of the conversation, an explanation, a roast, an image ("make a picture of…", "put a hat on this photo" while replying to the photo), what a voice note says. The model decides what to do and calls the right tool. No commands to learn.
 
-Default models: `anthropic/claude-haiku-5.5` for chat and tool use, `bytedance-seed/seedream-5-0-flash` for images, `google/gemini-3.1-flash-lite` for voice notes. All three are configurable, and the chat model can be switched from Signal.
+Default models: `anthropic/claude-haiku-5.5` for chat and tool use, `bytedance-seed/seedream-5-0-flash` for images, `google/gemini-3.1-flash-lite` for voice notes. All three are configurable, and the chat model can be switched by asking the bot.
 
 ## How it works
 
 - Every message of every allowed chat is stored in SQLite (`data/bot.sqlite3`) with its Signal identity (author, timestamp), so the bot knows who said what, when, and in reply to what, and still does after a restart.
 - Voice notes are transcribed on arrival (converted with ffmpeg, sent to an audio-capable model) and stored as text, prefixed 🎤. Images are saved to `data/attachments/` so they can be edited later.
-- A command works on a precise selection, not "the last 50 lines":
-  - **Reply to a message** with a command: that message is the target, the 10 messages before it are context.
-  - `/command 20`: the last 20 messages.
-  - `/resume` alone: everything since the previous `/resume` in that chat.
-  - `/analyse`, `/roast`, `/debat` alone: the last message of someone else, with recent context.
-  - `/command some text`: adds an instruction.
-- Commands and the bot's own prompts are never fed back as conversation; the bot's answers are.
-- The model receives dated, named lines (`[14:02] Paul (répond à Léa) : …`), plus `[CIBLE]` and `[DEMANDE]` blocks, under a system prompt that asks for plain text sized for Signal.
 - Natural-language mode (`llmbot/agent.py`): when the bot is called by name (`BOT_NAME`, `BOT_ALIASES`, accent-insensitive), mentioned, replied to, or written to in private, the model gets the last 30 messages, the reply chain as user/assistant turns, the quoted message as `[CIBLE]`, attached images, and four tools: `get_history` (more or older messages), `generate_image` (with `img1`, `img2`… identifiers of images seen in the conversation as references, so "combine our two photos" works), `get_spend`, `set_chat_model`. Up to 5 tool rounds. If the name is only mentioned in passing, the model answers `[rien]` and the bot stays silent.
-- Replies cut by the token limit are retried once with a bigger budget. Model errors are reported in the chat. Per-person rate limits (`RATE_LIMIT_PER_HOUR`, `IMAGES_PER_DAY`) and allow-lists keep the bill in check; `/cout` shows what has been spent.
+- Replies cut by the token limit are retried once with a bigger budget. Model errors are reported in the chat. Per-person rate limits (`RATE_LIMIT_PER_HOUR`, `IMAGES_PER_DAY`) and allow-lists keep the bill in check; ask the bot what it has cost.
 
-## Commands (shortcuts)
+## Examples
 
-| Command | What it does |
-|---|---|
-| `/resume [N]` | Summary since the previous `/resume`, or of the last N messages |
-| `/analyse [N] [text]` | Structured analysis of a message or exchange |
-| `/roast [N] [text]` | Roast the author of the target message |
-| `/debat` | Two opposing takes on the target message |
-| `/question [N] <question>` | Neutral, factual answer, with the chat as context |
-| `/perso <character> : <message>` | Answer in character (or reply to a message with `/perso <character> :`) |
-| `/image [ratio] <description>` | Generate an image (`1:1`, `16:9`, `9:16`, `4:3`, …). In reply to an image, or with an image attached: edit it |
-| `/edit <change>` | Same as `/image` but refuses to run without a reference image |
-| `/transcris` | In reply to a voice note: post its transcription |
-| `/modele [slug\|reset]` | Show or change the chat model (restricted to `ADMIN_NUMBERS` if set) |
-| `/cout` | Spend today and over 30 days, for this chat and overall |
-| `/aide` | Help |
+Say the bot's name (here `Jarvis`) anywhere in the message:
 
-Custom prompts: copy `prompts_custom.example.py` to `prompts_custom.py`; every uppercase string becomes a command (`AVOCAT_DU_DIABLE` → `/avocat-du-diable`), listed in `/aide`.
+- « Jarvis, résume ce qui s'est dit depuis hier soir »
+- « jarvis il a dit quoi dans son vocal ? » (replying to the voice note)
+- « Jarvis roast-le » (replying to someone's message)
+- « Jarvis fais une image d'un chat pirate en 16:9 »
+- « jarvis mets un chapeau sur cette photo » (replying to the photo, or attaching it)
+- « Jarvis mélange nos deux photos » (the model picks the images it saw in the conversation)
+- « Jarvis t'as coûté combien ce mois-ci ? », « Jarvis passe sur openai/gpt-5-mini » (admins)
+- Mentioning the bot, replying to one of its messages, or writing to it in private works the same, no name needed.
+
+Personas: copy `prompts_custom.example.py` to `prompts_custom.py`; every uppercase string is a style the bot can be asked to adopt by name (« Jarvis, réponds en philosophe »).
 
 ## Setup
 
@@ -60,7 +48,7 @@ Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/), ffmpeg (for voice 
    uv run python bot.py
    ```
 
-3. Add the bot to a group, send `/aide`.
+3. Add the bot to a group and call it by name.
 
 ### Configuration
 
@@ -76,8 +64,8 @@ Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/), ffmpeg (for voice 
 | `BOT_ALIASES` | none | Other names that address the bot, comma-separated |
 | `ALLOWED_GROUPS` | all | Comma-separated group names or ids |
 | `ALLOWED_NUMBERS` | all | Comma-separated numbers allowed in private chat |
-| `ADMIN_NUMBERS` | anyone | Who may run `/modele <slug>` |
-| `RATE_LIMIT_PER_HOUR` | `20` | Chat/command calls per person per hour (0 = unlimited) |
+| `ADMIN_NUMBERS` | anyone | Who may ask the bot to switch model |
+| `RATE_LIMIT_PER_HOUR` | `20` | Requests per person per hour (0 = unlimited) |
 | `IMAGES_PER_DAY` | `10` | Images per person per day |
 | `MAX_CONTEXT_MESSAGES` | `50` | Upper bound on messages given to the model |
 | `MAX_INPUT_CHARS` | `24000` | Oldest context lines are dropped beyond this |
@@ -98,10 +86,10 @@ llmbot/
   store.py              SQLite: messages, usage, settings
   openrouter.py         chat, audio input, image generation (httpx)
   media.py              attachments on disk, ffmpeg conversion
-  prompts.py            system prompts
-  commands.py           command registry, custom prompts, argument parsing
+  prompts.py            shared prompt pieces
+  personas.py           custom personas from prompts_custom.py
   context.py            formatting of the conversation for the model
-  handler.py            the Signal handler: record, addressing, commands
+  handler.py            the Signal handler: record, addressing, reply
   agent.py              natural-language mode: tools and the model loop
   syncflag.py           tells the bot's own (sync) messages apart
 tests/                  pytest, signal-cli-rest-api and OpenRouter stubbed

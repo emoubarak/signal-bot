@@ -28,35 +28,3 @@ def format_message(m: StoredMessage, tz: ZoneInfo, reply_name: NameResolver | No
     replied = reply_name(m) if (reply_name and m.reply_to_ts) else None
     who = m.author_name + (f" (répond à {replied})" if replied else "")
     return f"[{fmt_time(m.ts, tz)}] {who} : {prefix}{text}"
-
-
-def build_payload(
-    *,
-    conversation: list[StoredMessage],
-    target: StoredMessage | None,
-    request: str | None,
-    chat_name: str | None,
-    tz: ZoneInfo,
-    max_chars: int,
-    reply_name: NameResolver | None = None,
-) -> str:
-    """[CONVERSATION] / [CIBLE] / [DEMANDE] blocks, oldest conversation lines
-    dropped first to stay under `max_chars`."""
-    fixed: list[str] = []
-    if target is not None:
-        fixed.append("[CIBLE]\n" + format_message(target, tz, reply_name))
-    if request:
-        fixed.append("[DEMANDE]\n" + request.strip())
-    fixed_len = sum(len(p) + 2 for p in fixed)
-
-    lines = [format_message(m, tz, reply_name) for m in conversation]
-    header = "[CONVERSATION" + (f" — {chat_name}" if chat_name else "") + "]\n"
-    budget = max_chars - fixed_len - len(header)
-    while lines and sum(len(line) + 1 for line in lines) > budget:
-        lines.pop(0)
-
-    parts = []
-    if lines:
-        parts.append(header + "\n".join(lines))
-    parts.extend(fixed)
-    return "\n\n".join(parts)

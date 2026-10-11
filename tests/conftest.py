@@ -18,7 +18,7 @@ from signalbot.test_utils.chat_testing import (
     RemoteDeleteMock, SendMock, _new_timestamp,
 )
 
-from llmbot.commands import Registry
+from llmbot.personas import Registry
 from llmbot.config import Settings
 from llmbot.handler import LLMHandler
 from llmbot.openrouter import ChatResult, ImageResult, ModelInfo

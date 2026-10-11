@@ -4,11 +4,11 @@ from pathlib import Path
 from dotenv import load_dotenv
 from signalbot import SignalBot
 
-from llmbot.commands import Registry
 from llmbot.config import Settings
 from llmbot.handler import LLMHandler
 from llmbot.media import cleanup_attachments, ffmpeg_available
 from llmbot.openrouter import OpenRouter
+from llmbot.personas import Registry
 from llmbot.store import Store
 
 ROOT = Path(__file__).parent

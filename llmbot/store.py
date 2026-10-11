@@ -14,7 +14,6 @@ from pathlib import Path
 KIND_TEXT = "text"
 KIND_VOICE = "voice"
 KIND_IMAGE = "image"
-KIND_COMMAND = "command"
 KIND_BOT = "bot"
 
 _SCHEMA = """
@@ -63,10 +62,6 @@ class StoredMessage:
     @property
     def is_bot(self) -> bool:
         return self.kind == KIND_BOT
-
-    @property
-    def is_command(self) -> bool:
-        return self.kind == KIND_COMMAND
 
     def images(self) -> list[dict]:
         return [a for a in self.attachments if str(a.get("content_type", "")).startswith("image/")]
@@ -127,7 +122,6 @@ class Store:
         *,
         before_ts: int | None = None,
         after_ts: int | None = None,
-        include_commands: bool = False,
     ) -> list[StoredMessage]:
         """Last `limit` messages of a chat, oldest first."""
         sql = "SELECT * FROM messages WHERE chat_id=?"
@@ -138,37 +132,10 @@ class Store:
         if after_ts is not None:
             sql += " AND ts>?"
             params.append(after_ts)
-        if not include_commands:
-            sql += " AND kind<>?"
-            params.append(KIND_COMMAND)
         sql += " ORDER BY ts DESC LIMIT ?"
         params.append(limit)
         rows = self._db.execute(sql, params).fetchall()
         return [_row_to_message(r) for r in reversed(rows)]
-
-    def last_command_ts(self, chat_id: str, command: str, *, before_ts: int) -> int | None:
-        command = command.lower()
-        row = self._db.execute(
-            "SELECT ts FROM messages WHERE chat_id=? AND kind=? AND ts<? "
-            "AND (lower(text)=? OR lower(text) LIKE ? OR lower(text) LIKE ?) ORDER BY ts DESC LIMIT 1",
-            (chat_id, KIND_COMMAND, before_ts, command, command + " %", command + "@%"),
-        ).fetchone()
-        return row["ts"] if row else None
-
-    def thread(self, chat_id: str, ts: int, max_len: int = 12) -> list[StoredMessage]:
-        """The reply chain ending at `ts`, oldest first."""
-        chain: list[StoredMessage] = []
-        seen: set[int] = set()
-        current: int | None = ts
-        while current is not None and current not in seen and len(chain) < max_len:
-            seen.add(current)
-            m = self.get(chat_id, current)
-            if m is None:
-                break
-            chain.append(m)
-            current = m.reply_to_ts
-        chain.reverse()
-        return chain
 
     def conversation_thread(self, chat_id: str, ts: int, max_len: int = 12) -> list[StoredMessage]:
         """The reply chain ending at `ts`, followed only through exchanges with the

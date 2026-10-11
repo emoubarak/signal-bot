@@ -1,10 +1,9 @@
 """
 Custom prompts. Copy this file to `prompts_custom.py` and restart the bot.
 
-Every UPPERCASE string becomes a command: PHILOSOPHE -> /philosophe,
-AVOCAT_DU_DIABLE -> /avocat-du-diable. The first line of the prompt is shown
-in /aide. Custom commands target the quoted message, or the last message of
-someone else when nothing is quoted, with the recent conversation as context.
+Every UPPERCASE string becomes a persona the bot can be asked to adopt by
+name: PHILOSOPHE -> « Jarvis, réponds en philosophe », AVOCAT_DU_DIABLE ->
+« fais l'avocat du diable ». The model gets the list with each prompt.
 """
 
 PHILOSOPHE = """Philosophe cynique et désabusé.

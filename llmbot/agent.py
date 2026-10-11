@@ -11,7 +11,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from llmbot import prompts
-from llmbot.commands import ASPECT_RATIOS, Registry
+from llmbot.personas import Registry
 from llmbot.config import Settings
 from llmbot.context import format_message
 from llmbot.media import image_for_model
@@ -21,6 +21,7 @@ from llmbot.store import Store, StoredMessage
 logger = logging.getLogger("llmbot.agent")
 
 SILENCE = "[rien]"
+ASPECT_RATIOS = {"1:1", "1:2", "2:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9", "9:21", "auto"}
 MAX_ROUNDS = 5
 MAX_TOOL_HISTORY = 300
 
@@ -94,9 +95,9 @@ class Agent:
         s = self.settings
         now = datetime.now(self.tz)
         personas = ""
-        if self.registry.custom():
+        if self.registry.personas:
             personas = "\n\nPersonnages ou styles qu'on peut te demander d'adopter (applique la consigne) :\n" + "\n".join(
-                f"- {c.name} : {c.prompt.replace(chr(10), ' ')[:300]}" for c in self.registry.custom())
+                f"- {c.name} : {c.prompt.replace(chr(10), ' ')[:300]}" for c in self.registry.personas)
         where = f" dans le groupe « {req.chat_name} »" if req.chat_name else " en privé"
         return (
             f"Tu es {s.bot_name}, un participant{where} sur Signal. On s'adresse à toi en t'appelant par ton nom, "
