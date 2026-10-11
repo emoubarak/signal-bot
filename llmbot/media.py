@@ -112,3 +112,22 @@ def image_for_model(data: bytes, content_type: str | None) -> tuple[bytes, str]:
     except Exception as e:
         logger.warning("image re-encoding failed: %s", e)
     return data, ct or "image/jpeg"
+
+
+def image_for_signal(data: bytes, content_type: str | None) -> tuple[bytes, str]:
+    """Generated images as every Signal client shows them: JPEG or PNG. WebP
+    (Muse Image's output) is re-encoded to JPEG; on failure the original is returned."""
+    ct = (content_type or "").lower()
+    if ct in {"image/jpeg", "image/png"} or not ffmpeg_available():
+        return data, ct or "image/png"
+    try:
+        out = subprocess.run(
+            ["ffmpeg", "-loglevel", "error", "-i", "pipe:0", "-frames:v", "1",
+             "-q:v", "2", "-f", "image2", "-c:v", "mjpeg", "pipe:1"],
+            input=data, capture_output=True, timeout=30, check=True,
+        ).stdout
+        if out:
+            return out, "image/jpeg"
+    except Exception as e:
+        logger.warning("image re-encoding failed: %s", e)
+    return data, ct

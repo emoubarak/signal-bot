@@ -22,7 +22,7 @@ class Settings:
     openrouter_api_key: str
 
     chat_model: str = "deepseek/deepseek-v4.1-flash"
-    image_model: str = "bytedance-seed/seedream-5-0-flash"
+    image_model: str = "meta/muse-image"
     transcribe_model: str = "google/gemini-3.1-flash-lite"
 
     bot_name: str = "Bot"

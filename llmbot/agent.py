@@ -15,7 +15,7 @@ from llmbot import prompts
 from llmbot.personas import Registry
 from llmbot.config import Settings
 from llmbot.context import format_message
-from llmbot.media import image_for_model
+from llmbot.media import image_for_model, image_for_signal
 from llmbot.openrouter import OpenRouter, OpenRouterError, data_url
 from llmbot.store import Store, StoredMessage
 
@@ -207,7 +207,7 @@ class Agent:
                                                     aspect_ratio=ratio, references=refs[:8] or None)
             except OpenRouterError as e:
                 return f"Échec de la génération : {e}"
-            result.images.append((out.data, out.media_type))
+            result.images.append(image_for_signal(out.data, out.media_type))
             result.image_costs.append((out.model, out.cost))
             return "Image générée, elle sera envoyée avec ta réponse. Réponds maintenant avec une courte légende."
 
