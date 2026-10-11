@@ -139,8 +139,11 @@ class LLMHandler(DataMessageHandler):
     async def _transcribe(self, c: DataMessageContext, path: Path, content_type: str | None) -> str:
         try:
             audio, fmt = await audio_for_model(path.read_bytes(), content_type)
+            names = ", ".join([self.settings.bot_name, *self.settings.bot_aliases])
+            prompt = (prompts.TRANSCRIBE + f"\nUn bot du groupe s'appelle {names} : quand ce nom est prononcé, "
+                      "écris-le exactement ainsi.")
             result = await self.llm.transcribe(
-                model=self.settings.transcribe_model, audio=audio, audio_format=fmt, prompt=prompts.TRANSCRIBE,
+                model=self.settings.transcribe_model, audio=audio, audio_format=fmt, prompt=prompt,
             )
             self._usage(c, USAGE_TRANSCRIBE, result.model, result.cost)
             return result.text or "[inaudible]"
