@@ -16,6 +16,7 @@ services:
     build: .
     container_name: signal-bot
     restart: unless-stopped
+    stop_grace_period: 75s  # the bot finishes its answers in progress (60 s max)
     env_file: .env
     environment:
       SIGNAL_SERVICE: signal-rest:8080

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import threading
 import time
@@ -61,11 +62,27 @@ def main() -> None:
         "logging_level": logging.INFO,
     })
     logging.getLogger("signalbot").propagate = False  # signalbot installs its own handler
+    handler = LLMHandler(settings, store, llm, registry)
     bot.register(
-        LLMHandler(settings, store, llm, registry),
+        handler,
         contacts=settings.allowed_numbers or True,
         groups=settings.allowed_groups or True,
     )
+    # On SIGTERM (a deploy), finish the answers in progress before signalbot cancels every task
+    stop = bot.request_stop
+
+    def request_stop() -> None:
+        async def drain_then_stop() -> None:
+            if handler.busy:
+                log.info("stopping: waiting for %d answer(s) in progress", handler.busy)
+                try:
+                    await asyncio.wait_for(handler.drain(), 60)
+                except TimeoutError:
+                    log.warning("stopping: answers still in progress after 60 s, dropped")
+            stop()
+        bot.shutdown_drain = asyncio.get_running_loop().create_task(drain_then_stop())
+
+    bot.request_stop = request_stop
     if settings.kuma_push_url:
         threading.Thread(target=heartbeat, args=(settings.kuma_push_url, settings.signal_service), daemon=True).start()
     bot.start()

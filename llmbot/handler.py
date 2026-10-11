@@ -75,8 +75,12 @@ class LLMHandler(DataMessageHandler):
         if not task.cancelled() and task.exception() is not None:
             logger.error("answer failed", exc_info=task.exception())
 
+    @property
+    def busy(self) -> int:
+        return len(self._tasks)
+
     async def drain(self) -> None:
-        """Wait for the answers in progress (tests)."""
+        """Wait for the answers in progress (shutdown, tests)."""
         while self._tasks:
             await asyncio.gather(*self._tasks, return_exceptions=True)
 

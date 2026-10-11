@@ -5,6 +5,7 @@ OpenRouter endpoints without three SDKs.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
 from dataclasses import dataclass, field
@@ -14,10 +15,14 @@ import httpx
 logger = logging.getLogger("llmbot.openrouter")
 
 BASE_URL = "https://openrouter.ai/api/v1"
+# OpenRouter keeps a slow request alive with keep-alive bytes, so httpx's read
+# timeout never fires on a provider that hangs: these deadlines cover the whole call.
+CHAT_DEADLINE = 60.0
+IMAGE_DEADLINE = 150.0
 
 
 class OpenRouterError(Exception):
-    def __init__(self, message: str, status: int | None = None) -> None:
+    def __init__(self, message: str, status: int | str | None = None) -> None:
         super().__init__(message)
         self.status = status
 
@@ -70,9 +75,11 @@ class OpenRouter:
     async def close(self) -> None:
         await self._client.aclose()
 
-    async def _post(self, path: str, payload: dict) -> dict:
+    async def _post(self, path: str, payload: dict, deadline: float) -> dict:
         try:
-            resp = await self._client.post(path, json=payload)
+            resp = await asyncio.wait_for(self._client.post(path, json=payload), deadline)
+        except TimeoutError as e:
+            raise OpenRouterError(f"no answer after {deadline:.0f} s", "timeout") from e
         except httpx.HTTPError as e:
             raise OpenRouterError(f"network error: {e}") from e
         if resp.status_code >= 400:
@@ -112,10 +119,20 @@ class OpenRouter:
             "usage": {"include": True},
             # cheapest provider that supports the request (tools, images); open models vary up to 10x
             "provider": {"sort": "price"},
+            # a chat bot's replies gain little from reasoning and it makes them 2-3x slower
+            "reasoning": {"enabled": False},
         }
         if tools:
             payload["tools"] = tools
-        body = await self._post("/chat/completions", payload)
+        try:
+            body = await self._post("/chat/completions", payload, CHAT_DEADLINE)
+        except OpenRouterError as e:
+            if e.status != "timeout":
+                raise
+            # the cheapest provider hangs: let OpenRouter route to any other one
+            logger.warning("chat %s: %s, retrying with default routing", model, e)
+            del payload["provider"]
+            body = await self._post("/chat/completions", payload, CHAT_DEADLINE)
         choice = (body.get("choices") or [{}])[0]
         message = choice.get("message") or {}
         content = message.get("content")
@@ -126,7 +143,7 @@ class OpenRouter:
         cost = float((body.get("usage") or {}).get("cost") or 0.0)
         result = ChatResult(text=text, finish_reason=finish, model=body.get("model", model), cost=cost,
                             message=message, tool_calls=list(message.get("tool_calls") or []))
-        logger.info("chat %s finish=%s cost=$%.5f", result.model, finish, cost)
+        logger.info("chat %s (%s) finish=%s cost=$%.5f", result.model, body.get("provider"), finish, cost)
 
         if finish == "length":
             if retry_on_truncation:
@@ -167,7 +184,7 @@ class OpenRouter:
                 {"type": "image_url", "image_url": {"url": data_url(data, media_type)}}
                 for data, media_type in references
             ]
-        body = await self._post("/images", payload)
+        body = await self._post("/images", payload, IMAGE_DEADLINE)
         items = body.get("data") or []
         if not items or not items[0].get("b64_json"):
             raise OpenRouterError("no image in response")
