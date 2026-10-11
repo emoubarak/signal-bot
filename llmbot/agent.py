@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -115,7 +116,10 @@ class Agent:
             "- les vocaux sont déjà transcrits (lignes 🎤) : si on te demande ce que dit un vocal, cite-le ;\n"
             "- get_spend pour le coût, set_chat_model pour changer de modèle.\n\n"
             "Si un message est marqué [CIBLE], c'est de lui qu'on parle (« résume ça », « roast-le », « refais cette "
-            "image »). Si ton nom est juste cité sans rien te demander, réponds exactement " + SILENCE + ".\n"
+            "image »). Quand on te parle directement, même juste pour te saluer ou t'interpeller "
+            f"(« wsh {s.bot_name} », « salut {s.bot_name} », « {s.bot_name} ? »), tu réponds. Réponds exactement "
+            + SILENCE + " seulement si on parle de toi à la troisième personne sans s'adresser à toi "
+            f"(« {s.bot_name} a planté hier »).\n"
             "Quand tu génères une image, ton texte final est une courte légende, ou rien.\n"
             + prompts.COMMON_RULES.strip()
             + personas
@@ -264,6 +268,9 @@ class Agent:
             result.chat_cost += reply.cost
             result.text = reply.text
 
+        # the model sometimes copies the "[HH:MM] Name : " header of the transcript it was shown
+        result.text = re.sub(rf"^\s*(\[\d{{1,2}}:\d{{2}}\]\s*)?{re.escape(self.settings.bot_name)}\s*:\s*", "",
+                             result.text, flags=re.IGNORECASE) if result.text.lstrip().startswith("[") else result.text
         if result.text.strip() == SILENCE or (not result.text.strip() and not result.images):
             result.silent = not result.images
             result.text = ""

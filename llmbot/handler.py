@@ -283,6 +283,7 @@ class LLMHandler(DataMessageHandler):
         for model, cost in result.image_costs:
             self._usage(c, USAGE_IMAGE, model, cost)
         if result.silent:
+            logger.info("[%s] stays silent: name only mentioned in passing", rec.chat_id[:12])
             return
         if result.images:
             await self._say(c, rec, result.text, attachments=result.images, kind=KIND_IMAGE,
