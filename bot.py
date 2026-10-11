@@ -21,6 +21,7 @@ def heartbeat(push_url: str, signal_service: str) -> None:
     """Push "up" to Uptime Kuma every minute while signal-cli answers, "down" when it does not."""
     log = logging.getLogger("llmbot.heartbeat")
     while True:
+        time.sleep(60)  # first push after signal-cli has had time to start
         try:
             ok = httpx.get(f"http://{signal_service}/v1/health", timeout=10).is_success
         except httpx.HTTPError:
@@ -29,7 +30,6 @@ def heartbeat(push_url: str, signal_service: str) -> None:
             httpx.get(push_url, params={"status": "up" if ok else "down", "msg": "OK" if ok else "signal-cli unreachable"}, timeout=10)
         except httpx.HTTPError as exc:
             log.warning("kuma push failed: %s", exc)
-        time.sleep(60)
 
 
 def main() -> None:
