@@ -42,6 +42,9 @@ class LLMHandler(DataMessageHandler):
         # signalbot runs several consumers: serialise recording per chat so a
         # message is stored (voice note transcribed) before the next one is handled
         self._locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+        # answers run as background tasks: signalbot has only three consumers, and
+        # an image request holding one for a minute would hold up the next messages
+        self._tasks: set[asyncio.Task] = set()
         names = [settings.bot_name, *settings.bot_aliases]
         self._name_re = re.compile(
             r"(?<![\w@])(" + "|".join(re.escape(_fold(n)) for n in names if n.strip()) + r")(?![\w@])", re.I)
@@ -63,7 +66,19 @@ class LLMHandler(DataMessageHandler):
         async with self._locks[self._chat_id(c)]:
             rec = await self._record(c)
         if rec is not None and self._addressed_to_bot(c, rec):
-            await self._converse(c, rec)
+            task = asyncio.create_task(self._converse(c, rec))
+            self._tasks.add(task)
+            task.add_done_callback(self._task_done)
+
+    def _task_done(self, task: asyncio.Task) -> None:
+        self._tasks.discard(task)
+        if not task.cancelled() and task.exception() is not None:
+            logger.error("answer failed", exc_info=task.exception())
+
+    async def drain(self) -> None:
+        """Wait for the answers in progress (tests)."""
+        while self._tasks:
+            await asyncio.gather(*self._tasks, return_exceptions=True)
 
     # ── recording ───────────────────────────────────────────────────────────
 

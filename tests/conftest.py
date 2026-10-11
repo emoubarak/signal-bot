@@ -2,6 +2,7 @@
 (same patches as signalbot.test_utils.mock_chat), OpenRouter replaced by FakeLLM."""
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import uuid
@@ -47,6 +48,8 @@ class FakeLLM:
     image_calls: list[dict] = field(default_factory=list)
     # Scripted replies for the agent: a str is a final answer, a dict {"name", "arguments"} a tool call
     script: list = field(default_factory=list)
+    # When set, image generation waits for this event (to test concurrency)
+    image_gate: asyncio.Event | None = None
 
     async def chat(self, *, model, messages, temperature=0.7, max_tokens=1000, tools=None, retry_on_truncation=True):
         self.chat_calls.append({"model": model, "messages": messages, "temperature": temperature, "tools": tools})
@@ -67,6 +70,8 @@ class FakeLLM:
         return ChatResult(text=self.transcript, finish_reason="stop", model=model, cost=0.00005)
 
     async def generate_image(self, *, model, prompt, aspect_ratio="1:1", references=None):
+        if self.image_gate is not None:
+            await self.image_gate.wait()
         self.image_calls.append({"model": model, "prompt": prompt, "aspect_ratio": aspect_ratio,
                                  "references": references or []})
         return ImageResult(data=PNG_1PX, media_type="image/png", model=model, cost=0.018)
@@ -181,7 +186,7 @@ class Harness:
         )
         self._initialised = False
 
-    async def run(self, *messages: Envelope) -> None:
+    async def run(self, *messages: Envelope, drain: bool = True) -> None:
         self.receive_mock.define(messages)
         if not self._initialised:
             await self.bot._async_init()
@@ -190,6 +195,8 @@ class Harness:
         await pipeline._produce(1)
         while pipeline._q.qsize() > 0:
             await pipeline._consume_new_item(1)
+            if drain:  # answer before the next message, as the tests expect
+                await self.handler.drain()
 
     def sent(self) -> list:
         return self.send_mock.results()

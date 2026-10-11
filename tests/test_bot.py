@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from signalbot.test_utils.chat_testing import _new_timestamp
 
 from llmbot.store import KIND_BOT, KIND_IMAGE, KIND_VOICE
@@ -172,3 +174,18 @@ async def test_messages_from_the_bots_own_phone(harness: Harness):
     # In a group: calling the bot by name from its own phone works, plain messages don't trigger it
     await harness.run(group_message(PAUL, "salut"), sync_message("coucou"), sync_message("jarvis résume"))
     assert len(harness.llm.chat_calls) == 1 and "Paul : salut" in harness.llm.last_system()
+
+
+async def test_image_in_progress_does_not_hold_up_other_answers(harness: Harness):
+    harness.llm.image_gate = asyncio.Event()
+    # the second request takes the next scripted reply while the first waits on its image
+    harness.llm.script = [{"name": "generate_image", "arguments": {"prompt": "un chat"}}, "salut paul", "voilà"]
+    await harness.run(group_message(PAUL, "jarvis fais un chat"), drain=False)
+    await asyncio.sleep(0)  # the image request is now waiting on the image
+    await harness.run(group_message(PAUL, "jarvis salut"), drain=False)
+    for _ in range(20):
+        await asyncio.sleep(0)
+    assert harness.sent_texts() == ["salut paul"]
+    harness.llm.image_gate.set()
+    await harness.handler.drain()
+    assert harness.sent_texts() == ["salut paul", "voilà"]
