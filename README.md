@@ -75,6 +75,18 @@ You need Python 3.11+, [uv](https://docs.astral.sh/uv/), ffmpeg (voice notes and
 
 Indicative costs (OpenRouter, October 2026): a request with DeepSeek V4.1 Flash ≈ $0.0001 (the cheapest provider is picked), a one-minute voice note ≈ $0.001, an image or an edit with Muse Image $0.010.
 
+### Server and auto-deploy
+
+`compose.yaml` runs signal-cli-rest-api and the bot (`docker compose up -d`; the bot's data stays in `data/`). Set `SIGNAL_BIND` in `.env` to the address the link page should listen on (default `127.0.0.1`), then link the account at `http://<SIGNAL_BIND>:8086/v1/qrcodelink?device_name=bot`.
+
+To deploy every push to `main`, add `deploy/autodeploy.sh` to the server's crontab:
+
+```
+*/5 * * * * $HOME/repos/signal-bot/deploy/autodeploy.sh >> $HOME/repos/signal-bot/deploy/autodeploy.log 2>&1
+```
+
+It fast-forwards to `origin/main` and rebuilds the bot; if the new version does not stay up for 30 seconds it goes back to the previous commit and skips the broken one until `main` moves again.
+
 ## How it works
 
 - Every message of every allowed chat goes into SQLite (`data/bot.sqlite3`) with its Signal identity (author, timestamp, replied-to message). Names come from Signal profiles, never numbers. History survives restarts.
