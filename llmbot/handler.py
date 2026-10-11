@@ -50,7 +50,7 @@ class LLMHandler(DataMessageHandler):
 
     @property
     def chat_model(self) -> str:
-        return self.store.get_setting("chat_model") or self.settings.chat_model
+        return self.settings.chat_model
 
     # ── entry point ─────────────────────────────────────────────────────────
 
@@ -265,7 +265,6 @@ class LLMHandler(DataMessageHandler):
         images_used = self.store.count_usage(rec.author_id, USAGE_IMAGE, int(time.time() * 1000) - 86_400_000)
         req = AgentRequest(
             chat_id=rec.chat_id, chat_name=self._chat_name(c), user_id=rec.author_id,
-            is_admin=c.message.source_number in self.settings.admin_numbers,
             thread=thread, window=window, quoted=quoted,
             images_remaining=max(0, self.settings.images_per_day - images_used) if self.settings.images_per_day > 0 else 99,
         )

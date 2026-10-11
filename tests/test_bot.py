@@ -163,17 +163,6 @@ async def test_edit_updates_stored_text(harness: Harness):
     assert harness.store.get(CHAT_ID, t1).text == "version corrigée"
 
 
-async def test_model_switch_through_the_agent(harness: Harness):
-    harness.llm.script = [{"name": "set_chat_model", "arguments": {"slug": "openai/gpt-5-mini"}}, "Changé."]
-    await harness.run(group_message(PAUL, "jarvis passe sur gpt-5 mini"))
-    assert "Modèle changé" in tool_outputs(harness.llm.chat_calls[-1])[0]
-    await harness.run(group_message(PAUL, "jarvis test"))
-    assert harness.llm.chat_calls[-1]["model"] == "openai/gpt-5-mini"
-    harness.llm.script = [{"name": "set_chat_model", "arguments": {"slug": "nope/nope"}}, "Inconnu."]
-    await harness.run(group_message(PAUL, "jarvis passe sur nope"))
-    assert "inconnu" in tool_outputs(harness.llm.chat_calls[-1])[0]
-
-
 async def test_messages_from_the_bots_own_phone(harness: Harness):
     # In private: the owner's message is stored, not answered, not attributed to the contact
     t1 = _new_timestamp()

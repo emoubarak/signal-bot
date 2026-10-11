@@ -52,11 +52,6 @@ TOOLS = [
         "description": "Ce que le bot a coûté (aujourd'hui, 30 jours).",
         "parameters": {"type": "object", "properties": {}},
     }},
-    {"type": "function", "function": {
-        "name": "set_chat_model",
-        "description": "Change le modèle de langage du bot (réservé aux admins). 'reset' remet le modèle par défaut.",
-        "parameters": {"type": "object", "properties": {"slug": {"type": "string"}}, "required": ["slug"]},
-    }},
 ]
 
 
@@ -75,7 +70,6 @@ class AgentRequest:
     chat_id: str
     chat_name: str | None
     user_id: str
-    is_admin: bool
     thread: list[StoredMessage]      # reply chain ending with the current message
     window: list[StoredMessage]      # recent messages before the thread, for context
     quoted: StoredMessage | None     # the message replied to, if any (may be in thread)
@@ -115,7 +109,7 @@ class Agent:
             "identifiants (img1, img2…) en référence : une seule génération par demande sauf si on en demande "
             "plusieurs explicitement ;\n"
             "- les vocaux sont déjà transcrits (lignes 🎤) : si on te demande ce que dit un vocal, cite-le ;\n"
-            "- get_spend pour le coût, set_chat_model pour changer de modèle.\n\n"
+            "- get_spend pour le coût. Ton modèle, seul le propriétaire le change : si on te demande d'en changer, dis que ce n'est pas toi qui décides.\n\n"
             "Si un message est marqué [CIBLE], c'est de lui qu'on parle (« résume ça », « roast-le », « refais cette "
             "image »). Quand on te parle directement, même juste pour te saluer ou t'interpeller "
             f"(« wsh {s.bot_name} », « salut {s.bot_name} », « {s.bot_name} ? »), tu réponds. Réponds exactement "
@@ -218,22 +212,6 @@ class Agent:
             return (f"Aujourd'hui : {self.store.cost_since(day, req.chat_id):.3f} $ ici, "
                     f"{self.store.cost_since(day):.3f} $ au total. 30 jours : "
                     f"{self.store.cost_since(month, req.chat_id):.3f} $ ici, {self.store.cost_since(month):.3f} $ au total.")
-
-        if name == "set_chat_model":
-            if self.settings.admin_numbers and not req.is_admin:
-                return "Refusé : seuls les admins peuvent changer le modèle."
-            slug = str(args.get("slug") or "").strip()
-            if slug.lower() == "reset":
-                self.store.set_setting("chat_model", None)
-                return f"Modèle remis à {self.settings.chat_model} (effectif au prochain message)."
-            try:
-                info = (await self.llm.models()).get(slug)
-            except OpenRouterError as e:
-                return f"Impossible de vérifier : {e}"
-            if info is None or "text" not in info.output_modalities:
-                return f"Modèle inconnu ou sans sortie texte : {slug}"
-            self.store.set_setting("chat_model", slug)
-            return f"Modèle changé pour {slug} ({info.name}), effectif au prochain message."
 
         return f"Outil inconnu : {name}"
 

@@ -34,8 +34,6 @@ class Settings:
     # Empty list = everyone / every group. Groups: names or ids.
     allowed_groups: list[str] = field(default_factory=list)
     allowed_numbers: list[str] = field(default_factory=list)
-    # Who may change the model at runtime. Empty = anyone.
-    admin_numbers: list[str] = field(default_factory=list)
 
     rate_limit_per_hour: int = 20
     images_per_day: int = 10
@@ -71,7 +69,6 @@ class Settings:
             timezone=e.get("TIMEZONE") or cls.timezone,
             allowed_groups=_list(e.get("ALLOWED_GROUPS")),
             allowed_numbers=_list(e.get("ALLOWED_NUMBERS")),
-            admin_numbers=_list(e.get("ADMIN_NUMBERS")),
             rate_limit_per_hour=int(e.get("RATE_LIMIT_PER_HOUR") or cls.rate_limit_per_hour),
             images_per_day=int(e.get("IMAGES_PER_DAY") or cls.images_per_day),
             context_messages=int(e.get("CONTEXT_MESSAGES") or cls.context_messages),

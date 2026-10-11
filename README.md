@@ -19,7 +19,6 @@ Say the bot's name (here `Jarvis`) anywhere in a message, mention it, reply to o
 | « Jarvis mélange nos deux photos » | Picks the images it saw in the conversation and combines them |
 | « Jarvis réponds en philosophe » | Adopts one of your personas (see below) |
 | « Jarvis t'as coûté combien ce mois-ci ? » | Reports its spend |
-| « Jarvis passe sur openai/gpt-5-mini » (admins) | Switches the chat model |
 
 Voice notes are transcribed when they arrive, so « résume » covers them like any other message. If the name only comes up in passing (« Jarvis a planté hier »), the bot stays quiet.
 
@@ -63,7 +62,6 @@ You need Python 3.11+, [uv](https://docs.astral.sh/uv/), ffmpeg (voice notes and
 | `TRANSCRIBE_MODEL` | `google/gemini-3.1-flash-lite` | Audio-input model for voice notes |
 | `ALLOWED_GROUPS` | all | Group names or ids the bot listens to, comma-separated |
 | `ALLOWED_NUMBERS` | all | Numbers allowed to write to it in private |
-| `ADMIN_NUMBERS` | anyone | Who may ask it to switch model |
 | `RATE_LIMIT_PER_HOUR` | `20` | Requests per person per hour (0 = unlimited) |
 | `IMAGES_PER_DAY` | `10` | Images per person per day |
 | `CONTEXT_MESSAGES` | `30` | Recent messages given to the model with every request |
@@ -91,7 +89,7 @@ It fast-forwards to `origin/main` and rebuilds the bot; if the new version does 
 
 - Every message of every allowed chat goes into SQLite (`data/bot.sqlite3`) with its Signal identity (author, timestamp, replied-to message). Names come from Signal profiles, never numbers. History survives restarts.
 - Voice notes are converted with ffmpeg and transcribed on arrival; the text is stored with a 🎤 prefix. Images are kept in `data/attachments/` so they can be edited later; view-once media is not kept.
-- When the bot is addressed, the model receives: the last `CONTEXT_MESSAGES` messages with times and names, the reply chain with the bot as user/assistant turns, the message replied to as `[CIBLE]`, the attached images, and four tools: `get_history` (more or older messages), `generate_image` (prompt, format, and `img1`, `img2`… identifiers of images seen in the conversation as references), `get_spend`, `set_chat_model`. It can call tools up to five times before answering.
+- When the bot is addressed, the model receives: the last `CONTEXT_MESSAGES` messages with times and names, the reply chain with the bot as user/assistant turns, the message replied to as `[CIBLE]`, the attached images, and three tools: `get_history` (more or older messages), `generate_image` (prompt, format, and `img1`, `img2`… identifiers of images seen in the conversation as references), `get_spend`. Models are set in `.env` only. It can call tools up to five times before answering.
 - Replies cut by the token limit are retried once with a bigger budget. Model errors are reported in the chat. Rate limits are per person; the image limit is also given to the model so it refuses politely.
 - Messages typed from the bot's own phone are recognised and never answered, except when they call the bot by name in a group.
 
