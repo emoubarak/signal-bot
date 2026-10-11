@@ -23,3 +23,5 @@ __pycache__/
 prompts_custom.py
 # Bot data (database, attachments)
 data/
+# Database backups
+signal-bot-backups/
