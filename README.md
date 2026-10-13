@@ -21,6 +21,7 @@ Say the bot's name (here `Jarvis`) anywhere in a message, mention it, reply to o
 | « Jarvis mélange nos deux photos » | Picks the images it saw in the conversation and combines them |
 | « Jarvis réponds en philosophe » | Adopts one of your personas (see below) |
 | « Jarvis t'as coûté combien ce mois-ci ? » | Reports its spend |
+| `/clear` (the owner, in any chat) | Forgets what was said before, so an old conversation stops colouring its answers |
 
 Voice notes are transcribed when they arrive, so « résume » covers them like any other message. If the name only comes up in passing (« Jarvis a planté hier »), the bot stays quiet.
 
@@ -79,7 +80,7 @@ The model must support tool calls, which is what the bot drives its history, ima
 | `TRANSCRIBE_MODEL` | `google/gemini-3.1-flash-lite` | Audio-input model for voice notes. Empty = transcription off |
 | `ALLOWED_GROUPS` | all | Group names or ids the bot listens to, comma-separated |
 | `ALLOWED_NUMBERS` | all | Numbers allowed to write to it in private |
-| `OWNER_NUMBER` | none | Your number: gets a private message on every restart saying which model it came back on |
+| `OWNER_NUMBER` | none | Your number: the only one who can `/clear`, and who gets a private message on every restart saying which model it came back on |
 | `ANNOUNCE_STARTUP` | `true` | Announce every restart in the allowed groups and to `OWNER_NUMBER` |
 | `RATE_LIMIT_PER_HOUR` | `20` | Requests per person per hour (0 = unlimited) |
 | `IMAGES_PER_DAY` | `10` | Images per person per day |
@@ -112,6 +113,7 @@ It fast-forwards to `origin/main` and rebuilds the bot; if the new version does 
 - Replies cut by the token limit are retried once with a bigger budget. Model errors are reported in the chat. Rate limits are per person; the image limit is also given to the model so it refuses politely.
 - Messages typed from the bot's own phone are recognised and never answered, except when they call the bot by name in a group.
 - On every start the bot says « J'ai redémarré, blipbloup, je suis le modèle X en local » in each allowed group and in private to `OWNER_NUMBER`. `X` is the model that really answers the probe, not the configured name: on a llama-swap selector that means the model it loaded (`qwen3.8-flash-next-q2_0`), which is what you want to read after a restart. If the model does not answer in time the configured name is used, and the announcement still goes out. Set `ANNOUNCE_STARTUP=false` to silence it.
+- `OWNER_NUMBER` can type `/clear` in a chat to reset its context: nothing said before is shown to the model any more, and `get_history` cannot reach past it either, so the bot stops being biased by an old conversation. It is per chat (a `/clear` in one group leaves the others alone), it survives restarts, and it deletes nothing: the messages stay in SQLite, so cost and history are intact and the floor can be moved again with another `/clear`. The bot confirms in the chat so it is visible that the command took.
 
 ## Layout
 
