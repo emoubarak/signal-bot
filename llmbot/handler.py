@@ -30,6 +30,9 @@ USAGE_IMAGE = "image"
 USAGE_TRANSCRIBE = "transcribe"
 USAGE_DESCRIBE = "describe"
 
+# `/clear`, `/clear!`, `!clear` …: the command alone, never inside a word (`/clearance`).
+_CLEAR_RE = re.compile(r"^[/!]clear\s*[!?.]*$")
+
 
 class LLMHandler(DataMessageHandler):
     def __init__(self, settings: Settings, store: Store, llm: OpenRouter, registry: Registry) -> None:
@@ -65,10 +68,47 @@ class LLMHandler(DataMessageHandler):
 
         async with self._locks[self._chat_id(c)]:
             rec = await self._record(c)
-        if rec is not None and self._addressed_to_bot(c, rec):
+        if rec is None:
+            return
+        if self._is_clear_command(c, rec):
+            task = asyncio.create_task(self._clear_context(c, rec))
+            self._tasks.add(task)
+            task.add_done_callback(self._task_done)
+            return
+        if self._addressed_to_bot(c, rec):
             task = asyncio.create_task(self._converse(c, rec))
             self._tasks.add(task)
             task.add_done_callback(self._task_done)
+
+    # ── /clear ──────────────────────────────────────────────────────────────
+
+    def _is_clear_command(self, c: DataMessageContext, rec: StoredMessage) -> bool:
+        """`/clear`, from the owner only.
+
+        The owner is `OWNER_NUMBER`: nobody else can make the bot forget a chat.
+        `/clear` counts alone or followed by a separator (`/clear!`), never inside a
+        word (`/clearance`)."""
+        if not self.settings.owner_number:
+            return False
+        if not self._is_owner(c):
+            return False
+        return _CLEAR_RE.match(_fold(rec.text).strip()) is not None
+
+    def _is_owner(self, c: DataMessageContext) -> bool:
+        msg = c.message
+        owner = self.settings.owner_number
+        candidates = {msg.source_number, msg.source_uuid}
+        if msg.is_private():
+            return owner in candidates
+        # in a group the number identifies the owner; a self-sent (sync) message
+        # comes from the bot's own account, which is the owner's phone
+        return owner in candidates or (msg.source_number == self.settings.phone_number and self._is_self(c))
+
+    async def _clear_context(self, c: DataMessageContext, rec: StoredMessage) -> None:
+        hidden = self.store.clear_context(rec.chat_id, rec.ts)
+        logger.info("[%s] context cleared by the owner (%d earlier messages hidden)", rec.chat_id[:12], hidden)
+        await self._say(c, rec, "C'est fait, je repars de zéro ici : j'oublie tout ce qui s'est dit avant. "
+                                f"({hidden} messages masqués, rien n'est supprimé.)")
 
     def _task_done(self, task: asyncio.Task) -> None:
         self._tasks.discard(task)
@@ -290,6 +330,8 @@ class LLMHandler(DataMessageHandler):
             chat_id=rec.chat_id, chat_name=self._chat_name(c), user_id=rec.author_id,
             thread=thread, window=window, quoted=quoted,
             images_remaining=max(0, self.settings.images_per_day - images_used) if self.settings.images_per_day > 0 else 99,
+            # after a /clear the model must not see, or reach back to, what was said before
+            context_start=self.store.context_start(rec.chat_id),
         )
         await c.start_typing()
         try:

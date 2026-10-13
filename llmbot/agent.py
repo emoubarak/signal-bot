@@ -84,6 +84,9 @@ class AgentRequest:
     window: list[StoredMessage]      # recent messages before the thread, for context
     quoted: StoredMessage | None     # the message replied to, if any (may be in thread)
     images_remaining: int
+    # Timestamp of the last /clear in this chat: nothing before it is shown to the
+    # model, and get_history cannot reach past it. None = never cleared.
+    context_start: int | None = None
 
 
 class Agent:
@@ -122,6 +125,11 @@ class Agent:
             can.append(
                 "- les vocaux ne sont pas transcrits ici : si on te demande ce que dit un vocal, dis que la "
                 "transcription est coupée et qu'on peut te réécrire le contenu en texte ;")
+        if req.context_start is not None:
+            can.append(
+                "- le contexte a été vidé sur cette discussion : tu ne vois rien de ce qui s'est dit avant, et "
+                "get_history ne peut pas y remonter non plus. Si on te demande de résumer une période d'avant, "
+                "dis-le simplement au lieu d'inventer.")
         if not s.images_enabled:
             can.append(
                 "- la création et la modification d'images sont coupées : si on t'en demande une, dis-le simplement, "
@@ -163,21 +171,27 @@ class Agent:
 
     def _build_messages(self, req: AgentRequest, images: dict[str, dict]) -> list[dict]:
         system = self._system(req)
-        if req.window:
-            system += "\n\n[CONVERSATION — derniers messages]\n" + "\n".join(self._line(m, images) for m in req.window)
+        # After a /clear, nothing said before it may reach the model: drop it here too,
+        # so a caller that hands over an older thread cannot undo the command.
+        floor = req.context_start
+        window = [m for m in req.window if floor is None or m.ts >= floor]
+        thread = [m for m in req.thread if floor is None or m.ts >= floor] or req.thread[-1:]
+        quoted = req.quoted if floor is None or (req.quoted and req.quoted.ts >= floor) else None
+        if window:
+            system += "\n\n[CONVERSATION — derniers messages]\n" + "\n".join(self._line(m, images) for m in window)
         messages: list[dict] = [{"role": "system", "content": system}]
 
-        quoted_in_thread = req.quoted is not None and any(m.ts == req.quoted.ts for m in req.thread)
-        for i, m in enumerate(req.thread):
+        quoted_in_thread = quoted is not None and any(m.ts == quoted.ts for m in thread)
+        for i, m in enumerate(thread):
             if m.is_bot:
                 messages.append({"role": "assistant", "content": m.text})
                 continue
             text = self._line(m, images)
-            is_last = i == len(req.thread) - 1
-            if is_last and req.quoted is not None and not quoted_in_thread:
-                text = "[CIBLE]\n" + self._line(req.quoted, images) + "\n\n" + text
+            is_last = i == len(thread) - 1
+            if is_last and quoted is not None and not quoted_in_thread:
+                text = "[CIBLE]\n" + self._line(quoted, images) + "\n\n" + text
             content: list[dict] = [{"type": "text", "text": text}]
-            for img in (m.images() + (req.quoted.images() if is_last and req.quoted and not quoted_in_thread else []))[-3:]:
+            for img in (m.images() + (quoted.images() if is_last and quoted and not quoted_in_thread else []))[-3:]:
                 path = Path(img["path"])
                 if path.exists():
                     data, mt = image_for_model(path.read_bytes(), img["content_type"])
@@ -194,9 +208,15 @@ class Agent:
             after = None
             if args.get("since_hours"):
                 after = int((time.time() - float(args["since_hours"]) * 3600) * 1000)
+            # a /clear forbids reaching past it, whatever the model asks for
+            if req.context_start is not None:
+                after = max(after or 0, req.context_start)
             before = req.thread[-1].ts
             msgs = self.store.recent(req.chat_id, count, before_ts=before, after_ts=after)
             if not msgs:
+                if req.context_start is not None:
+                    return ("Rien depuis le /clear : on a vidé le contexte, je ne vois pas ce qui s'est dit avant. "
+                            "Dis-moi ce qu'il faut savoir, ou demande-moi de résumer à partir de maintenant.")
                 return "Aucun message sur cette période."
             return "\n".join(self._line(m, images) for m in msgs)
 

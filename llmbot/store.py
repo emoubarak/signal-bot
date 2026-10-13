@@ -207,3 +207,29 @@ class Store:
         else:
             self._db.execute("INSERT OR REPLACE INTO settings VALUES (?,?)", (key, value))
         self._db.commit()
+
+    # ── context clearing (/clear) ────────────────────────────────────────────
+
+    def clear_context(self, chat_id: str, ts: int) -> int:
+        """Make the bot forget everything said in `chat_id` before `ts`.
+
+        The messages stay in the database (summaries, history and cost are
+        unaffected); the model simply stops being shown them, and `get_history`
+        stops reaching past this point. Returns how many messages were hidden."""
+        self.set_setting(self._clear_key(chat_id), str(ts))
+        row = self._db.execute(
+            "SELECT COUNT(*) AS n FROM messages WHERE chat_id=? AND ts<?", (chat_id, ts)
+        ).fetchone()
+        return int(row["n"])
+
+    def context_start(self, chat_id: str) -> int | None:
+        """The timestamp of the last /clear in this chat, or None."""
+        value = self.get_setting(self._clear_key(chat_id))
+        try:
+            return int(value) if value is not None else None
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _clear_key(chat_id: str) -> str:
+        return f"context_cleared_at:{chat_id}"
