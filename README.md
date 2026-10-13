@@ -4,6 +4,8 @@ A bot that lives in your Signal groups. Call it by its name and say what you wan
 
 Runs on [OpenRouter](https://openrouter.ai) with `deepseek/deepseek-v4.1-flash` for chat and tool use, `meta/muse-image` for images, `google/gemini-3.1-flash-lite` for voice notes. All three can be changed.
 
+Chat can also run on a **local model** instead: set `LOCAL_BASE_URL` to any OpenAI-compatible server (llama-swap, llama-server, vLLM, Ollama) and chat and tool use go there, with no API key and nothing leaving the machine. Images and voice notes have no local equivalent in a text server and stay on OpenRouter, or are switched off by emptying `IMAGE_MODEL` and `TRANSCRIBE_MODEL`.
+
 ## What it does
 
 Say the bot's name (here `Jarvis`) anywhere in a message, mention it, reply to one of its messages, or write to it in private.
@@ -48,18 +50,33 @@ You need Python 3.11+, [uv](https://docs.astral.sh/uv/), ffmpeg (voice notes and
 
 3. Add the bot to a group and call it by name.
 
+### Running on a local model
+
+Point `LOCAL_BASE_URL` at any OpenAI-compatible server to keep chat and tool use on your own machine:
+
+```bash
+LOCAL_BASE_URL=http://100.111.115.112:8089/v1   # llama-swap, llama-server, vLLM, Ollama…
+CHAT_MODEL=qwen3.6-35b-ablit                    # whatever the server serves; a llama-swap selector loads it on demand
+IMAGE_MODEL=                                    # empty: a text server has no /images endpoint
+TRANSCRIBE_MODEL=                               # empty: it ignores audio input too
+OPENROUTER_API_KEY=
+```
+
+The model must support tool calls, which is what the bot drives its history, image and spend tools with. With `IMAGE_MODEL` or `TRANSCRIBE_MODEL` empty the bot stops offering that capability and says so when asked, rather than promising something it cannot do. Keep `OPENROUTER_API_KEY` and the two models set to keep images and voice notes while chat stays local.
+
 ### Configuration
 
 | Variable | Default | Description |
 |---|---|---|
 | `SIGNAL_SERVICE` | required | signal-cli-rest-api address, e.g. `127.0.0.1:8080` |
 | `PHONE_NUMBER` | required | The bot's number |
-| `OPENROUTER_API_KEY` | required | OpenRouter key |
+| `OPENROUTER_API_KEY` | required unless `LOCAL_BASE_URL` | OpenRouter key: chat without a local model, images, voice notes |
+| `LOCAL_BASE_URL` | none | OpenAI-compatible chat endpoint, e.g. `http://127.0.0.1:8089/v1`. Set = chat runs locally, no key needed |
 | `BOT_NAME` | `Bot` | The bot's name; saying it in a message addresses the bot |
 | `BOT_ALIASES` | none | Other names that address the bot, comma-separated |
-| `OPENROUTER_MODEL` | `deepseek/deepseek-v4.1-flash` | Chat model, any OpenRouter slug with text output and tool use |
-| `IMAGE_MODEL` | `meta/muse-image` | Image model, from the OpenRouter Image API |
-| `TRANSCRIBE_MODEL` | `google/gemini-3.1-flash-lite` | Audio-input model for voice notes |
+| `CHAT_MODEL` | `deepseek/deepseek-v4.1-flash` | Chat model: an OpenRouter slug, or a name the local server serves (a llama-swap selector works). `OPENROUTER_MODEL` is still read as the older name |
+| `IMAGE_MODEL` | `meta/muse-image` | Image model, from the OpenRouter Image API. Empty = image generation off |
+| `TRANSCRIBE_MODEL` | `google/gemini-3.1-flash-lite` | Audio-input model for voice notes. Empty = transcription off |
 | `ALLOWED_GROUPS` | all | Group names or ids the bot listens to, comma-separated |
 | `ALLOWED_NUMBERS` | all | Numbers allowed to write to it in private |
 | `RATE_LIMIT_PER_HOUR` | `20` | Requests per person per hour (0 = unlimited) |
@@ -71,7 +88,7 @@ You need Python 3.11+, [uv](https://docs.astral.sh/uv/), ffmpeg (voice notes and
 | `DESCRIBE_IMAGES` | `false` | Describe every incoming image with the chat model (one vision call each) |
 | `ATTACHMENT_RETENTION_DAYS` | `30` | Attachments older than this are deleted at startup |
 
-Indicative costs (OpenRouter, October 2026): a request with DeepSeek V4.1 Flash ≈ $0.0001 (the cheapest provider is picked), a one-minute voice note ≈ $0.001, an image or an edit with Muse Image $0.010.
+Indicative costs (OpenRouter, October 2026): a request with DeepSeek V4.1 Flash ≈ $0.0001 (the cheapest provider is picked), a one-minute voice note ≈ $0.001, an image or an edit with Muse Image $0.010. A local chat model costs nothing and its requests are reported at $0.
 
 ### Server and auto-deploy
 
@@ -89,7 +106,7 @@ It fast-forwards to `origin/main` and rebuilds the bot; if the new version does 
 
 - Every message of every allowed chat goes into SQLite (`data/bot.sqlite3`) with its Signal identity (author, timestamp, replied-to message). Names come from Signal profiles, never numbers. History survives restarts.
 - Voice notes are converted with ffmpeg and transcribed on arrival; the text is stored with a 🎤 prefix. Images are kept in `data/attachments/` so they can be edited later; view-once media is not kept.
-- When the bot is addressed, the model receives: the last `CONTEXT_MESSAGES` messages with times and names, the reply chain with the bot as user/assistant turns, the message replied to as `[CIBLE]`, the attached images, and three tools: `get_history` (more or older messages), `generate_image` (prompt, format, and `img1`, `img2`… identifiers of images seen in the conversation as references), `get_spend`. Models are set in `.env` only. It can call tools up to five times before answering.
+- When the bot is addressed, the model receives: the last `CONTEXT_MESSAGES` messages with times and names, the reply chain with the bot as user/assistant turns, the message replied to as `[CIBLE]`, the attached images, and three tools: `get_history` (more or older messages), `generate_image` (prompt, format, and `img1`, `img2`… identifiers of images seen in the conversation as references), `get_spend`. Models are set in `.env` only. It can call tools up to five times before answering. `generate_image` is only offered when an image model is configured, so a bot without one says so instead of promising a picture.
 - Replies cut by the token limit are retried once with a bigger budget. Model errors are reported in the chat. Rate limits are per person; the image limit is also given to the model so it refuses politely.
 - Messages typed from the bot's own phone are recognised and never answered, except when they call the bot by name in a group.
 
@@ -100,7 +117,7 @@ bot.py                  entry point
 llmbot/
   config.py             settings from the environment
   store.py              SQLite: messages, usage, settings
-  openrouter.py         chat with tools, audio input, image generation (httpx)
+  openrouter.py         chat with tools (OpenRouter or a local server), audio input, image generation (httpx)
   media.py              attachments on disk, ffmpeg conversions
   agent.py              tools and the model loop
   handler.py            the Signal handler: record, addressing, reply

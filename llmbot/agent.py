@@ -22,37 +22,47 @@ from llmbot.store import Store, StoredMessage
 logger = logging.getLogger("llmbot.agent")
 
 SILENCE = "[rien]"
+# There is no local equivalent of OpenRouter's Image API: without an image model
+# the tool is not offered at all, so the model cannot promise an image it cannot make.
+IMAGE_UNAVAILABLE = "Refusé : la création d'images est désactivée sur ce bot (IMAGE_MODEL vide dans .env)."
 ASPECT_RATIOS = {"1:1", "1:2", "2:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9", "9:21", "auto"}
 MAX_ROUNDS = 5
 MAX_TOOL_HISTORY = 300
 
-TOOLS = [
-    {"type": "function", "function": {
-        "name": "get_history",
-        "description": "Lit plus de messages de cette discussion que les derniers fournis. "
-                       "Utile pour résumer une longue période ou retrouver quelque chose d'ancien.",
-        "parameters": {"type": "object", "properties": {
-            "count": {"type": "integer", "description": "Nombre de messages à lire (max 300)."},
-            "since_hours": {"type": "number", "description": "Ne garder que les messages des N dernières heures."},
-        }},
+GET_HISTORY_TOOL = {"type": "function", "function": {
+    "name": "get_history",
+    "description": "Lit plus de messages de cette discussion que les derniers fournis. "
+                   "Utile pour résumer une longue période ou retrouver quelque chose d'ancien.",
+    "parameters": {"type": "object", "properties": {
+        "count": {"type": "integer", "description": "Nombre de messages à lire (max 300)."},
+        "since_hours": {"type": "number", "description": "Ne garder que les messages des N dernières heures."},
     }},
-    {"type": "function", "function": {
-        "name": "generate_image",
-        "description": "Génère une image, ou en modifie/combine en passant des images de la discussion en référence.",
-        "parameters": {"type": "object", "properties": {
-            "prompt": {"type": "string", "description": "Description précise de l'image voulue (ou de la modification)."},
-            "aspect_ratio": {"type": "string", "enum": sorted(ASPECT_RATIOS),
-                             "description": "Format. 'auto' quand on part d'une image de référence."},
-            "reference_images": {"type": "array", "items": {"type": "string"},
-                                 "description": "Identifiants d'images de la discussion (img1, img2…) à utiliser comme référence."},
-        }, "required": ["prompt"]},
-    }},
-    {"type": "function", "function": {
-        "name": "get_spend",
-        "description": "Ce que le bot a coûté (aujourd'hui, 30 jours).",
-        "parameters": {"type": "object", "properties": {}},
-    }},
-]
+}}
+GENERATE_IMAGE_TOOL = {"type": "function", "function": {
+    "name": "generate_image",
+    "description": "Génère une image, ou en modifie/combine en passant des images de la discussion en référence.",
+    "parameters": {"type": "object", "properties": {
+        "prompt": {"type": "string", "description": "Description précise de l'image voulue (ou de la modification)."},
+        "aspect_ratio": {"type": "string", "enum": sorted(ASPECT_RATIOS),
+                         "description": "Format. 'auto' quand on part d'une image de référence."},
+        "reference_images": {"type": "array", "items": {"type": "string"},
+                             "description": "Identifiants d'images de la discussion (img1, img2…) à utiliser comme référence."},
+    }, "required": ["prompt"]},
+}}
+GET_SPEND_TOOL = {"type": "function", "function": {
+    "name": "get_spend",
+    "description": "Ce que le bot a coûté (aujourd'hui, 30 jours).",
+    "parameters": {"type": "object", "properties": {}},
+}}
+
+
+def tools_for(settings: Settings) -> list[dict]:
+    """The tools the model is offered, given what this bot can actually do."""
+    tools = [GET_HISTORY_TOOL]
+    if settings.images_enabled:
+        tools.append(GENERATE_IMAGE_TOOL)
+    tools.append(GET_SPEND_TOOL)
+    return tools
 
 
 @dataclass
@@ -94,32 +104,47 @@ class Agent:
             personas = "\n\nPersonnages ou styles qu'on peut te demander d'adopter (applique la consigne) :\n" + "\n".join(
                 f"- {c.name} : {c.prompt.replace(chr(10), ' ')[:300]}" for c in self.registry.personas)
         where = f" dans le groupe « {req.chat_name} »" if req.chat_name else " en privé"
+        can: list[str] = [
+            "- résumer la discussion (une période, les N derniers messages, « depuis hier ») : les derniers messages "
+            "sont fournis ci-dessous, appelle get_history s'il t'en faut plus ou de plus anciens ;",
+            "- répondre à une question, expliquer, donner un avis, analyser un échange, roaster quelqu'un (vanne "
+            "mordante entre potes, jamais sur le physique, l'origine ou la religion), jouer un débat pour/contre, "
+            "parler avec la voix d'un personnage ;",
+        ]
+        if s.images_enabled:
+            can.append(
+                "- créer une image avec generate_image, ou modifier/combiner des images de la discussion en passant "
+                "leurs identifiants (img1, img2…) en référence : une seule génération par demande sauf si on en "
+                "demande plusieurs explicitement ;")
+        if s.transcription_enabled:
+            can.append("- les vocaux sont déjà transcrits (lignes 🎤) : si on te demande ce que dit un vocal, cite-le ;")
+        else:
+            can.append(
+                "- les vocaux ne sont pas transcrits ici : si on te demande ce que dit un vocal, dis que la "
+                "transcription est coupée et qu'on peut te réécrire le contenu en texte ;")
+        if not s.images_enabled:
+            can.append(
+                "- la création et la modification d'images sont coupées : si on t'en demande une, dis-le simplement, "
+                "sans inventer d'image ;")
+        can.append("- get_spend pour le coût. Ton modèle, seul le propriétaire le change : si on te demande d'en "
+                   "changer, dis que ce n'est pas toi qui décides.")
         return (
             f"Tu es {s.bot_name}, un participant{where} sur Signal. On s'adresse à toi en t'appelant par ton nom, "
             "en te mentionnant, en répondant à un de tes messages ou en privé. Tu comprends la demande en langage "
             "naturel et tu agis, sans demander de confirmation quand c'est clair.\n"
             + prompts.PERSONALITY + "\n"
             "Ce que tu sais faire :\n"
-            "- résumer la discussion (une période, les N derniers messages, « depuis hier ») : les derniers messages "
-            "sont fournis ci-dessous, appelle get_history s'il t'en faut plus ou de plus anciens ;\n"
-            "- répondre à une question, expliquer, donner un avis, analyser un échange, roaster quelqu'un (vanne "
-            "mordante entre potes, jamais sur le physique, l'origine ou la religion), jouer un débat pour/contre, "
-            "parler avec la voix d'un personnage ;\n"
-            "- créer une image avec generate_image, ou modifier/combiner des images de la discussion en passant leurs "
-            "identifiants (img1, img2…) en référence : une seule génération par demande sauf si on en demande "
-            "plusieurs explicitement ;\n"
-            "- les vocaux sont déjà transcrits (lignes 🎤) : si on te demande ce que dit un vocal, cite-le ;\n"
-            "- get_spend pour le coût. Ton modèle, seul le propriétaire le change : si on te demande d'en changer, dis que ce n'est pas toi qui décides.\n\n"
+            + "\n".join(can) + "\n\n"
             "Si un message est marqué [CIBLE], c'est de lui qu'on parle (« résume ça », « roast-le », « refais cette "
             "image »). Quand on te parle directement, même juste pour te saluer ou t'interpeller "
             f"(« wsh {s.bot_name} », « salut {s.bot_name} », « {s.bot_name} ? »), tu réponds. Réponds exactement "
             + SILENCE + " seulement si on parle de toi à la troisième personne sans s'adresser à toi "
             f"(« {s.bot_name} a planté hier »).\n"
-            "Quand tu génères une image, ton texte final est une courte légende, ou rien.\n"
+            + ("Quand tu génères une image, ton texte final est une courte légende, ou rien.\n" if s.images_enabled else "")
             + prompts.COMMON_RULES.strip()
             + personas
-            + f"\n\nMaintenant : {now.strftime('%A %d/%m/%Y %H:%M')} ({s.timezone}). Limite d'images restante pour "
-              f"cette personne : {req.images_remaining}."
+            + f"\n\nMaintenant : {now.strftime('%A %d/%m/%Y %H:%M')} ({s.timezone})."
+            + (f" Limite d'images restante pour cette personne : {req.images_remaining}." if s.images_enabled else "")
         )
 
     def _line(self, m: StoredMessage, images: dict[str, dict]) -> str:
@@ -176,6 +201,8 @@ class Agent:
             return "\n".join(self._line(m, images) for m in msgs)
 
         if name == "generate_image":
+            if not self.settings.images_enabled:
+                return IMAGE_UNAVAILABLE
             if result.images and len(result.images) >= max(1, req.images_remaining):
                 return "Refusé : limite d'images atteinte pour cette personne."
             if req.images_remaining <= 0:
@@ -221,10 +248,11 @@ class Agent:
         images: dict[str, dict] = {}
         messages = self._build_messages(req, images)
         result = AgentResult(text="", chat_model=chat_model)
+        tools = tools_for(self.settings)
 
         for _ in range(MAX_ROUNDS):
             reply = await self.llm.chat(model=chat_model, messages=messages, temperature=0.7,
-                                        max_tokens=self.settings.max_output_tokens, tools=TOOLS)
+                                        max_tokens=self.settings.max_output_tokens, tools=tools)
             result.chat_cost += reply.cost
             result.chat_model = reply.model
             if not reply.tool_calls:

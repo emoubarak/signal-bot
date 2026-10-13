@@ -11,7 +11,7 @@ from signalbot import SignalBot
 from llmbot.config import Settings
 from llmbot.handler import LLMHandler
 from llmbot.media import cleanup_attachments, ffmpeg_available
-from llmbot.openrouter import OpenRouter
+from llmbot.openrouter import BASE_URL, OpenRouter
 from llmbot.personas import Registry
 from llmbot.store import Store
 
@@ -48,12 +48,26 @@ def main() -> None:
     removed = cleanup_attachments(data_dir, settings.attachment_retention_days)
     if removed:
         log.info("removed %d old attachments", removed)
-    if not ffmpeg_available():
+    if not ffmpeg_available() and settings.transcription_enabled:
         log.warning("ffmpeg not found: voice notes are sent raw to the model (may fail on some formats)")
 
-    llm = OpenRouter(settings.openrouter_api_key)
+    llm = OpenRouter(
+        settings.openrouter_api_key,
+        base_url=settings.local_base_url or BASE_URL,
+        local=settings.local_chat,
+    )
     registry = Registry.load(ROOT / "prompts_custom.py")
-    log.info("chat=%s image=%s transcribe=%s", settings.chat_model, settings.image_model, settings.transcribe_model)
+    source = settings.chat_endpoint
+    log.info("chat=%s (%s) image=%s transcribe=%s", settings.chat_model, source,
+             settings.image_model or "off", settings.transcribe_model or "off")
+    if settings.local_chat:
+        log.info("local chat endpoint: %s", settings.local_base_url)
+    if not settings.images_enabled:
+        log.info("image generation is off (IMAGE_MODEL empty)")
+    if not settings.transcription_enabled:
+        log.info("voice note transcription is off (TRANSCRIBE_MODEL empty)")
+    if settings.describe_images and not settings.openrouter_api_key:
+        log.warning("DESCRIBE_IMAGES needs OpenRouter (OPENROUTER_API_KEY unset): image descriptions will fail")
 
     bot = SignalBot({
         "signal_service": settings.signal_service,

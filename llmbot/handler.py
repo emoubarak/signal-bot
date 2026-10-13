@@ -156,6 +156,8 @@ class LLMHandler(DataMessageHandler):
             logger.info("edited message %s", msg.target_sent_timestamp)
 
     async def _transcribe(self, c: DataMessageContext, path: Path, content_type: str | None) -> str:
+        if not self.settings.transcription_enabled:
+            return "[vocal non transcrit : transcription désactivée]"
         try:
             audio, fmt = await audio_for_model(path.read_bytes(), content_type)
             names = ", ".join([self.settings.bot_name, *self.settings.bot_aliases])
@@ -171,6 +173,8 @@ class LLMHandler(DataMessageHandler):
             return f"[vocal non transcrit : {type(e).__name__}]"
 
     async def _describe_image(self, c: DataMessageContext, path: Path, content_type: str) -> str | None:
+        if not self.settings.openrouter_api_key:
+            return None
         try:
             result = await self.llm.chat(
                 model=self.chat_model,
