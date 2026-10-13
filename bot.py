@@ -13,6 +13,7 @@ from llmbot.handler import LLMHandler
 from llmbot.media import cleanup_attachments, ffmpeg_available
 from llmbot.openrouter import BASE_URL, OpenRouter
 from llmbot.personas import Registry
+from llmbot.startup import StartupAnnouncer
 from llmbot.store import Store
 
 ROOT = Path(__file__).parent
@@ -82,6 +83,10 @@ def main() -> None:
         contacts=settings.allowed_numbers or True,
         groups=settings.allowed_groups or True,
     )
+    if settings.announce_startup:
+        # handle_ready runs once, after the groups are resolved: the announcement
+        # can then name the model that actually serves it
+        bot.register(StartupAnnouncer(settings, llm))
     # On SIGTERM (a deploy), finish the answers in progress before signalbot cancels every task
     stop = bot.request_stop
 

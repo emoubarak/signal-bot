@@ -79,6 +79,8 @@ The model must support tool calls, which is what the bot drives its history, ima
 | `TRANSCRIBE_MODEL` | `google/gemini-3.1-flash-lite` | Audio-input model for voice notes. Empty = transcription off |
 | `ALLOWED_GROUPS` | all | Group names or ids the bot listens to, comma-separated |
 | `ALLOWED_NUMBERS` | all | Numbers allowed to write to it in private |
+| `OWNER_NUMBER` | none | Your number: gets a private message on every restart saying which model it came back on |
+| `ANNOUNCE_STARTUP` | `true` | Announce every restart in the allowed groups and to `OWNER_NUMBER` |
 | `RATE_LIMIT_PER_HOUR` | `20` | Requests per person per hour (0 = unlimited) |
 | `IMAGES_PER_DAY` | `10` | Images per person per day |
 | `CONTEXT_MESSAGES` | `30` | Recent messages given to the model with every request |
@@ -109,6 +111,7 @@ It fast-forwards to `origin/main` and rebuilds the bot; if the new version does 
 - When the bot is addressed, the model receives: the last `CONTEXT_MESSAGES` messages with times and names, the reply chain with the bot as user/assistant turns, the message replied to as `[CIBLE]`, the attached images, and three tools: `get_history` (more or older messages), `generate_image` (prompt, format, and `img1`, `img2`… identifiers of images seen in the conversation as references), `get_spend`. Models are set in `.env` only. It can call tools up to five times before answering. `generate_image` is only offered when an image model is configured, so a bot without one says so instead of promising a picture.
 - Replies cut by the token limit are retried once with a bigger budget. Model errors are reported in the chat. Rate limits are per person; the image limit is also given to the model so it refuses politely.
 - Messages typed from the bot's own phone are recognised and never answered, except when they call the bot by name in a group.
+- On every start the bot says « J'ai redémarré, blipbloup, je suis le modèle X en local » in each allowed group and in private to `OWNER_NUMBER`. `X` is the model that really answers the probe, not the configured name: on a llama-swap selector that means the model it loaded (`qwen3.8-flash-next-q2_0`), which is what you want to read after a restart. If the model does not answer in time the configured name is used, and the announcement still goes out. Set `ANNOUNCE_STARTUP=false` to silence it.
 
 ## Layout
 
@@ -125,6 +128,7 @@ llmbot/
   prompts.py            shared prompt pieces
   personas.py           custom personas from prompts_custom.py
   syncflag.py           tells the bot's own (sync) messages apart
+  startup.py            the restart announcement: which model it came back on
 tests/                  pytest, with signal-cli-rest-api and OpenRouter stubbed
 ```
 

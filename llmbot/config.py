@@ -41,6 +41,10 @@ class Settings:
     allowed_groups: list[str] = field(default_factory=list)
     allowed_numbers: list[str] = field(default_factory=list)
 
+    # The owner's number: told which model the bot restarted on, and the private
+    # chat the startup message goes to. Empty = no private announcement.
+    owner_number: str = ""
+
     rate_limit_per_hour: int = 20
     images_per_day: int = 10
 
@@ -55,6 +59,9 @@ class Settings:
 
     # Uptime Kuma push URL, pinged every minute while signal-cli answers. Empty = off.
     kuma_push_url: str = ""
+
+    # Say "I restarted" in every allowed group and in private to the owner.
+    announce_startup: bool = True
 
     @property
     def local_chat(self) -> bool:
@@ -96,6 +103,7 @@ class Settings:
             timezone=e.get("TIMEZONE") or cls.timezone,
             allowed_groups=_list(e.get("ALLOWED_GROUPS")),
             allowed_numbers=_list(e.get("ALLOWED_NUMBERS")),
+            owner_number=(e.get("OWNER_NUMBER") or "").strip(),
             rate_limit_per_hour=int(e.get("RATE_LIMIT_PER_HOUR") or cls.rate_limit_per_hour),
             images_per_day=int(e.get("IMAGES_PER_DAY") or cls.images_per_day),
             context_messages=int(e.get("CONTEXT_MESSAGES") or cls.context_messages),
@@ -103,4 +111,5 @@ class Settings:
             describe_images=_bool(e.get("DESCRIBE_IMAGES"), cls.describe_images),
             attachment_retention_days=int(e.get("ATTACHMENT_RETENTION_DAYS") or cls.attachment_retention_days),
             kuma_push_url=e.get("KUMA_PUSH_URL") or "",
+            announce_startup=_bool(e.get("ANNOUNCE_STARTUP"), cls.announce_startup),
         )
