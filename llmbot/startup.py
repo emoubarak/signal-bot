@@ -1,7 +1,7 @@
 """Announce at startup, once the bot is connected: where it runs and on which model.
 
 The model actually serving the request is asked, not the configured name: a
-llama-swap selector such as `qwen3.6-35b-ablit` answers as whichever model it
+llama-swap selector such as `qwen3.8-flash-next-ablit` answers as whichever model it
 loaded (`qwen3.8-flash-next-q2_0`), and that is what the owner wants to read.
 """
 from __future__ import annotations

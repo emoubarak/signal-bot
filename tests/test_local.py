@@ -29,7 +29,7 @@ async def test_local_chat_sends_no_openrouter_only_fields():
         return httpx.Response(200, json=REPLY)
 
     llm = OpenRouter("", base_url=LOCAL_URL, local=True, client=local_client(handler))
-    result = await llm.chat(model="qwen3.6-35b-ablit", messages=[{"role": "user", "content": "x"}])
+    result = await llm.chat(model="qwen3.8-flash-next-ablit", messages=[{"role": "user", "content": "x"}])
 
     assert result.text == "ok"
     assert result.model == "qwen3.8-flash-next-q2_0"
