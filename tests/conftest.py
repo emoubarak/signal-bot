@@ -32,7 +32,7 @@ GROUP_ID = ChatTestCase.group_id
 CHAT_ID = GROUP_INTERNAL
 
 PAUL = ("+33611111111", "11111111-1111-1111-1111-111111111111", "Paul")
-LEA = ("+33622222222", "22222222-2222-2222-2222-222222222222", "Léa")
+LEA = ("+33622222222", "22222222-2222-2222-2222-222222222222", "Lea")
 
 PNG_1PX = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
@@ -41,8 +41,8 @@ PNG_1PX = base64.b64decode(
 
 @dataclass
 class FakeLLM:
-    answer: str = "réponse du modèle"
-    transcript: str = "salut c'est un vocal"
+    answer: str = "model reply"
+    transcript: str = "hi this is a voice note"
     chat_calls: list[dict] = field(default_factory=list)
     transcribe_calls: list[dict] = field(default_factory=list)
     image_calls: list[dict] = field(default_factory=list)

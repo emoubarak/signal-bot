@@ -56,7 +56,7 @@ async def test_announcement_names_the_model_actually_served():
     assert llm.calls[0]["max_tokens"] == 1  # the probe is a cheap one-token call
     text = bot.sent[0][1]
     assert "qwen3.8-flash-next-q2_0" in text
-    assert "en local" in text
+    assert "locally" in text
 
 
 async def test_announcement_says_openrouter_when_chat_is_not_local():
@@ -67,8 +67,8 @@ async def test_announcement_says_openrouter_when_chat_is_not_local():
 
     await announcer.handle_ready(FakeContext(bot))
 
-    assert "sur OpenRouter" in bot.sent[0][1]
-    assert "en local" not in bot.sent[0][1]
+    assert "on OpenRouter" in bot.sent[0][1]
+    assert "locally" not in bot.sent[0][1]
 
 
 async def test_probe_failure_still_announces_the_configured_name():
@@ -85,14 +85,14 @@ async def test_probe_failure_still_announces_the_configured_name():
 
 async def test_announcement_goes_to_every_allowed_group_and_the_owner():
     announcer = StartupAnnouncer(
-        settings(allowed_groups=["LE SILENCIER", "Famille"], owner_number="+33628508830",
+        settings(allowed_groups=["THE SILENCER", "Family"], owner_number="+33628508830",
                  local_base_url="http://x:8089/v1"),
         ProbeLLM())
     bot = FakeBot()
 
     await announcer.handle_ready(FakeContext(bot))
 
-    assert [r for r, _ in bot.sent] == ["LE SILENCIER", "Famille", "+33628508830"]
+    assert [r for r, _ in bot.sent] == ["THE SILENCER", "Family", "+33628508830"]
 
 
 async def test_owner_only_when_no_group_is_configured():
@@ -107,14 +107,14 @@ async def test_owner_only_when_no_group_is_configured():
 
 async def test_unreachable_chat_does_not_stop_the_others():
     announcer = StartupAnnouncer(
-        settings(allowed_groups=["Famille", "Morte"], owner_number="+33628508830",
+        settings(allowed_groups=["Family", "Dead"], owner_number="+33628508830",
                  local_base_url="http://x:8089/v1"),
         ProbeLLM())
-    bot = FakeBot(fail_for={"Morte"})
+    bot = FakeBot(fail_for={"Dead"})
 
     await announcer.handle_ready(FakeContext(bot))
 
-    assert [r for r, _ in bot.sent] == ["Famille", "+33628508830"]
+    assert [r for r, _ in bot.sent] == ["Family", "+33628508830"]
 
 
 async def test_nothing_is_sent_without_a_destination():

@@ -107,8 +107,8 @@ class LLMHandler(DataMessageHandler):
     async def _clear_context(self, c: DataMessageContext, rec: StoredMessage) -> None:
         hidden = self.store.clear_context(rec.chat_id, rec.ts)
         logger.info("[%s] context cleared by the owner (%d earlier messages hidden)", rec.chat_id[:12], hidden)
-        await self._say(c, rec, "C'est fait, je repars de zéro ici : j'oublie tout ce qui s'est dit avant. "
-                                f"({hidden} messages masqués, rien n'est supprimé.)")
+        await self._say(c, rec, "Done, starting fresh here: I forget everything said before. "
+                                f"({hidden} messages hidden, nothing deleted.)")
 
     def _task_done(self, task: asyncio.Task) -> None:
         self._tasks.discard(task)
@@ -138,7 +138,7 @@ class LLMHandler(DataMessageHandler):
         author_id = msg.source_uuid or msg.source_number or "?"
         if self._is_self(c):
             return author_id, self.settings.bot_name
-        name = msg.source_name or msg.source_number or self.store.author_name(self._chat_id(c), author_id) or "Inconnu"
+        name = msg.source_name or msg.source_number or self.store.author_name(self._chat_id(c), author_id) or "Unknown"
         return author_id, name
 
     async def _record(self, c: DataMessageContext) -> StoredMessage | None:
@@ -165,17 +165,17 @@ class LLMHandler(DataMessageHandler):
         images = [a for a in attachments if is_image(a["content_type"])]
         if transcript is not None:
             kind = KIND_VOICE
-            text = f"{transcript} — {text}" if text else transcript
+            text = f"{transcript} - {text}" if text else transcript
         elif images:
             kind = KIND_IMAGE
             if self.settings.describe_images:
                 description = await self._describe_image(c, Path(images[0]["path"]), images[0]["content_type"])
                 if description:
-                    text = f"{text} [image : {description}]" if text else f"[image : {description}]"
+                    text = f"{text} [image: {description}]" if text else f"[image: {description}]"
         else:
             kind = KIND_TEXT
             if not text and attachments:
-                text = "[fichier " + ", ".join(a["content_type"] or "?" for a in attachments) + "]"
+                text = "[file " + ", ".join(a["content_type"] or "?" for a in attachments) + "]"
 
         if not text and not attachments:
             return None  # stickers, reactions, empty data messages
@@ -197,12 +197,12 @@ class LLMHandler(DataMessageHandler):
 
     async def _transcribe(self, c: DataMessageContext, path: Path, content_type: str | None) -> str:
         if not self.settings.transcription_enabled:
-            return "[vocal non transcrit : transcription désactivée]"
+            return "[voice note not transcribed: transcription disabled]"
         try:
             audio, fmt = await audio_for_model(path.read_bytes(), content_type)
             names = ", ".join([self.settings.bot_name, *self.settings.bot_aliases])
-            prompt = (prompts.TRANSCRIBE + f"\nUn bot du groupe s'appelle {names} : quand ce nom est prononcé, "
-                      "écris-le exactement ainsi.")
+            prompt = (prompts.TRANSCRIBE + f"\nA bot in the group is called {names}: when that name is spoken, "
+                      "write it exactly like this.")
             result = await self.llm.transcribe(
                 model=self.settings.transcribe_model, audio=audio, audio_format=fmt, prompt=prompt,
             )
@@ -210,7 +210,7 @@ class LLMHandler(DataMessageHandler):
             return result.text or "[inaudible]"
         except Exception as e:
             logger.exception("transcription failed")
-            return f"[vocal non transcrit : {type(e).__name__}]"
+            return f"[voice note not transcribed: {type(e).__name__}]"
 
     async def _describe_image(self, c: DataMessageContext, path: Path, content_type: str) -> str | None:
         if not self.settings.openrouter_api_key:
@@ -260,7 +260,7 @@ class LLMHandler(DataMessageHandler):
         if stored is not None:
             return stored
         author_id = quote.author_uuid or quote.author_number or quote.author or "?"
-        name = self.store.author_name(rec.chat_id, author_id) or quote.author_number or "Quelqu'un"
+        name = self.store.author_name(rec.chat_id, author_id) or quote.author_number or "Someone"
         if quote.author_number == self.settings.phone_number:
             name = self.settings.bot_name
         return StoredMessage(chat_id=rec.chat_id, ts=quote.id, author_id=author_id, author_name=name, text=quote.text or "")
@@ -307,12 +307,12 @@ class LLMHandler(DataMessageHandler):
     async def _within_limit(self, c: DataMessageContext, rec: StoredMessage, kind: str) -> bool:
         if self._is_self(c):
             return True
-        limit, window, label = self.settings.rate_limit_per_hour, 3_600_000, "demandes par heure"
+        limit, window, label = self.settings.rate_limit_per_hour, 3_600_000, "requests per hour"
         if limit <= 0:
             return True
         used = self.store.count_usage(rec.author_id, kind, int(time.time() * 1000) - window)
         if used >= limit:
-            await self._say(c, rec, f"Doucement : limite de {limit} {label} atteinte.")
+            await self._say(c, rec, f"Slow down: {limit} {label} limit reached.")
             return False
         return True
 
@@ -338,11 +338,11 @@ class LLMHandler(DataMessageHandler):
             result = await self.agent.run(req, chat_model=self.chat_model)
         except OpenRouterError as e:
             logger.error("agent failed: %s", e)
-            await self._say(c, rec, f"Le modèle n'a pas répondu ({e}).")
+            await self._say(c, rec, f"The model did not answer ({e}).")
             return
         except Exception:
             logger.exception("agent failed")
-            await self._say(c, rec, "Erreur inattendue, réessaie dans un instant.")
+            await self._say(c, rec, "Unexpected error, try again in a moment.")
             return
         finally:
             await c.stop_typing()
@@ -354,11 +354,11 @@ class LLMHandler(DataMessageHandler):
             return
         if result.images:
             await self._say(c, rec, result.text, attachments=result.images, kind=KIND_IMAGE,
-                            stored_text=f"[image générée] {result.text}".strip())
+                            stored_text=f"[generated image] {result.text}".strip())
         else:
             await self._say(c, rec, result.text)
 
 
 def _fold(text: str) -> str:
-    """Lower-case without accents, so « Léo » matches « leo »."""
+    """Lower-case without accents, so "Leo" matches "leo"."""
     return "".join(ch for ch in unicodedata.normalize("NFD", text.lower()) if unicodedata.category(ch) != "Mn")

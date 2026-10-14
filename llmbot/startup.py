@@ -41,8 +41,8 @@ class StartupAnnouncer(ReadyHandler):
 
     async def _announcement(self) -> str:
         model = await self._served_model()
-        where = "en local" if self.settings.local_chat else "sur OpenRouter"
-        return f"J'ai redémarré, blipbloup, je suis le modèle {model} {where}."
+        where = "locally" if self.settings.local_chat else "on OpenRouter"
+        return f"I restarted, beep-boop, I am model {model} {where}."
 
     async def handle_ready(self, context) -> None:
         text = await self._announcement()

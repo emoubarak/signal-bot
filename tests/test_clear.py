@@ -39,7 +39,7 @@ def test_clear_context_hides_earlier_messages_without_deleting_them():
 
 def test_context_start_is_none_before_any_clear():
     store = Store(":memory:")
-    store.add(msg(1000, "Paul", "salut"))
+    store.add(msg(1000, "Paul", "hi"))
     assert store.context_start("chat") is None
 
 
@@ -76,17 +76,17 @@ def _agent(store, **overrides) -> Agent:
 def test_window_before_the_clear_is_not_sent_to_the_model():
     store = Store(":memory:")
     agent = _agent(store)
-    old = [msg(1000, "Paul", "on parle de politique"), msg(1001, "Lea", "ouais")]
-    new = [msg(2000, "Paul", "nouveau sujet")]
-    req = AgentRequest(chat_id="chat", chat_name="Groupe", user_id="idPaul",
-                       thread=[msg(3000, "Paul", "Mop, tu en penses quoi ?")],
+    old = [msg(1000, "Paul", "talking politics"), msg(1001, "Lea", "yeah")]
+    new = [msg(2000, "Paul", "new topic")]
+    req = AgentRequest(chat_id="chat", chat_name="Group", user_id="idPaul",
+                       thread=[msg(3000, "Paul", "Mop, what do you think?")],
                        window=old + new, quoted=None, images_remaining=0, context_start=2000)
 
     messages = agent._build_messages(req, {})
     flat = "\n".join(str(m["content"]) for m in messages)
 
-    assert "nouveau sujet" in flat
-    assert "politique" not in flat          # the biased old context is gone
+    assert "new topic" in flat
+    assert "politics" not in flat          # the biased old context is gone
 
 
 def test_the_clear_itself_stays_visible():
@@ -94,68 +94,68 @@ def test_the_clear_itself_stays_visible():
     store = Store(":memory:")
     agent = _agent(store)
     req = AgentRequest(chat_id="chat", chat_name=None, user_id="idMehdi",
-                       thread=[msg(5000, "Mehdi", "Mop ca va ?")],
-                       window=[msg(4000, "Mehdi", "/clear"), msg(4500, "Paul", "avant/apres")],
+                       thread=[msg(5000, "Mehdi", "Mop how are you?")],
+                       window=[msg(4000, "Mehdi", "/clear"), msg(4500, "Paul", "before/after")],
                        quoted=None, images_remaining=0, context_start=4000)
 
     flat = "\n".join(str(m["content"]) for m in agent._build_messages(req, {}))
 
-    assert "avant/apres" in flat            # said after the clear: still visible
-    assert "Mop ca va ?" in flat
+    assert "before/after" in flat            # said after the clear: still visible
+    assert "Mop how are you?" in flat
 
 
 async def test_get_history_cannot_reach_past_the_clear():
     store = Store(":memory:")
     for i in range(5):
-        store.add(msg(1000 + i, "Paul", f"ancien {i}"))
+        store.add(msg(1000 + i, "Paul", f"old {i}"))
     store.add(msg(3000, "Lea", "recent"))
     store.clear_context("chat", 2000)
 
     agent = _agent(store)
     req = AgentRequest(chat_id="chat", chat_name=None, user_id="idLea",
-                       thread=[msg(4000, "Lea", "Mop résume")], window=[], quoted=None,
+                       thread=[msg(4000, "Lea", "Mop summarize")], window=[], quoted=None,
                        images_remaining=0, context_start=2000)
 
     out = await agent._run_tool("get_history", {"count": 100}, req, {}, None)
 
     assert "recent" in out
-    assert "ancien" not in out              # the model cannot dig the old context back up
+    assert "old" not in out              # the model cannot dig the old context back up
 
 
 async def test_get_history_says_so_when_there_is_nothing_since_the_clear():
     store = Store(":memory:")
-    store.add(msg(1000, "Paul", "vieux message"))
+    store.add(msg(1000, "Paul", "old message"))
     store.clear_context("chat", 2000)
 
     agent = _agent(store)
     req = AgentRequest(chat_id="chat", chat_name=None, user_id="idPaul",
-                       thread=[msg(3000, "Paul", "Mop résume hier")], window=[], quoted=None,
+                       thread=[msg(3000, "Paul", "Mop summarize yesterday")], window=[], quoted=None,
                        images_remaining=0, context_start=2000)
 
     out = await agent._run_tool("get_history", {"count": 100, "since_hours": 48}, req, {}, None)
 
     assert "clear" in out.lower()
-    assert "vieux message" not in out
+    assert "old message" not in out
 
 
 def test_the_model_is_told_the_context_was_cleared():
     store = Store(":memory:")
     agent = _agent(store)
     req = AgentRequest(chat_id="chat", chat_name=None, user_id="idPaul",
-                       thread=[msg(3000, "Paul", "Mop résume")], window=[], quoted=None,
+                       thread=[msg(3000, "Paul", "Mop summarize")], window=[], quoted=None,
                        images_remaining=0, context_start=2000)
     system = agent._build_messages(req, {})[0]["content"]
-    assert "contexte a été vidé" in system
+    assert "context was cleared" in system
 
 
 def test_without_a_clear_the_model_sees_everything():
     store = Store(":memory:")
     agent = _agent(store)
     req = AgentRequest(chat_id="chat", chat_name=None, user_id="idPaul",
-                       thread=[msg(3000, "Paul", "Mop résume")],
-                       window=[msg(1000, "Paul", "vieux sujet")], quoted=None, images_remaining=0)
+                       thread=[msg(3000, "Paul", "Mop summarize")],
+                       window=[msg(1000, "Paul", "old topic")], quoted=None, images_remaining=0)
     flat = "\n".join(str(m["content"]) for m in agent._build_messages(req, {}))
-    assert "vieux sujet" in flat
+    assert "old topic" in flat
 
 
 # ── the command, through the handler ────────────────────────────────────────
@@ -172,10 +172,10 @@ def owner_harness(mocker, tmp_path):
 async def test_owner_clears_the_context_in_the_group(owner_harness: Harness):
     harness = owner_harness
     owner = (OWNER, "owner-uuid", "Mehdi")
-    await harness.run(group_message(PAUL, "on parle de politique"), group_message(owner, "/clear"))
+    await harness.run(group_message(PAUL, "talking politics"), group_message(owner, "/clear"))
 
     sent = harness.sent_texts()
-    assert any("de zéro" in t for t in sent)          # the bot confirms in the group
+    assert any("starting fresh" in t for t in sent)          # the bot confirms in the group
     assert harness.store.context_start(CHAT_ID) is not None
     # the model was never asked to answer the command itself
     assert harness.llm.chat_calls == []
@@ -192,13 +192,13 @@ async def test_another_person_cannot_clear_the_context(owner_harness: Harness):
 async def test_clear_must_be_the_whole_command(owner_harness: Harness):
     harness = owner_harness
     owner = (OWNER, "owner-uuid", "Mehdi")
-    await harness.run(group_message(owner, "/clearance des travaux commence demain"))
+    await harness.run(group_message(owner, "/clearance work starts tomorrow"))
 
     assert harness.store.context_start(CHAT_ID) is None
 
 
 async def test_clear_without_an_owner_configured_does_nothing(harness: Harness):
-    # le harnais par defaut n'a pas de OWNER_NUMBER
+    # the default harness has no OWNER_NUMBER
     owner = (OWNER, "owner-uuid", "Mehdi")
     await harness.run(group_message(owner, "/clear"))
 
@@ -212,7 +212,7 @@ async def test_clear_accepts_the_usual_spellings(owner_harness: Harness, spellin
     assert owner_harness.store.context_start(CHAT_ID) is not None, spelling
 
 
-@pytest.mark.parametrize("text", ["/clearance des travaux", "/clearer la table", "/clearing"])
+@pytest.mark.parametrize("text", ["/clearance work", "/clearer the table", "/clearing"])
 async def test_clear_rejects_words_that_only_start_with_it(owner_harness: Harness, text: str):
     owner = (OWNER, "owner-uuid", "Mehdi")
     await owner_harness.run(group_message(owner, text))

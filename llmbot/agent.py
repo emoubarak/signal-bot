@@ -21,37 +21,37 @@ from llmbot.store import Store, StoredMessage
 
 logger = logging.getLogger("llmbot.agent")
 
-SILENCE = "[rien]"
+SILENCE = "[nothing]"
 # There is no local equivalent of OpenRouter's Image API: without an image model
 # the tool is not offered at all, so the model cannot promise an image it cannot make.
-IMAGE_UNAVAILABLE = "Refusé : la création d'images est désactivée sur ce bot (IMAGE_MODEL vide dans .env)."
+IMAGE_UNAVAILABLE = "Refused: image creation is disabled on this bot (empty IMAGE_MODEL in .env)."
 ASPECT_RATIOS = {"1:1", "1:2", "2:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9", "9:21", "auto"}
 MAX_ROUNDS = 5
 MAX_TOOL_HISTORY = 300
 
 GET_HISTORY_TOOL = {"type": "function", "function": {
     "name": "get_history",
-    "description": "Lit plus de messages de cette discussion que les derniers fournis. "
-                   "Utile pour résumer une longue période ou retrouver quelque chose d'ancien.",
+    "description": "Reads more messages from this conversation than the recent ones provided. "
+                   "Useful to summarize a long period or find something old.",
     "parameters": {"type": "object", "properties": {
-        "count": {"type": "integer", "description": "Nombre de messages à lire (max 300)."},
-        "since_hours": {"type": "number", "description": "Ne garder que les messages des N dernières heures."},
+        "count": {"type": "integer", "description": "Number of messages to read (max 300)."},
+        "since_hours": {"type": "number", "description": "Only keep messages from the last N hours."},
     }},
 }}
 GENERATE_IMAGE_TOOL = {"type": "function", "function": {
     "name": "generate_image",
-    "description": "Génère une image, ou en modifie/combine en passant des images de la discussion en référence.",
+    "description": "Generates an image, or edits/combines conversation images passed as references.",
     "parameters": {"type": "object", "properties": {
-        "prompt": {"type": "string", "description": "Description précise de l'image voulue (ou de la modification)."},
+        "prompt": {"type": "string", "description": "Precise description of the wanted image (or of the edit)."},
         "aspect_ratio": {"type": "string", "enum": sorted(ASPECT_RATIOS),
-                         "description": "Format. 'auto' quand on part d'une image de référence."},
+                         "description": "Format. 'auto' when starting from a reference image."},
         "reference_images": {"type": "array", "items": {"type": "string"},
-                             "description": "Identifiants d'images de la discussion (img1, img2…) à utiliser comme référence."},
+                             "description": "Image identifiers from the conversation (img1, img2…) to use as references."},
     }, "required": ["prompt"]},
 }}
 GET_SPEND_TOOL = {"type": "function", "function": {
     "name": "get_spend",
-    "description": "Ce que le bot a coûté (aujourd'hui, 30 jours).",
+    "description": "What the bot cost (today, 30 days).",
     "parameters": {"type": "object", "properties": {}},
 }}
 
@@ -104,55 +104,55 @@ class Agent:
         now = datetime.now(self.tz)
         personas = ""
         if self.registry.personas:
-            personas = "\n\nPersonnages ou styles qu'on peut te demander d'adopter (applique la consigne) :\n" + "\n".join(
+            personas = "\n\nCharacters or styles you may be asked to adopt (follow the instruction):\n" + "\n".join(
                 f"- {c.name} : {c.prompt.replace(chr(10), ' ')[:300]}" for c in self.registry.personas)
-        where = f" dans le groupe « {req.chat_name} »" if req.chat_name else " en privé"
+        where = f' in the group "{req.chat_name}"' if req.chat_name else " in private"
         can: list[str] = [
-            "- résumer la discussion (une période, les N derniers messages, « depuis hier ») : les derniers messages "
-            "sont fournis ci-dessous, appelle get_history s'il t'en faut plus ou de plus anciens ;",
-            "- répondre à une question, expliquer, donner un avis, analyser un échange, roaster quelqu'un (vanne "
-            "mordante entre potes, jamais sur le physique, l'origine ou la religion), jouer un débat pour/contre, "
-            "parler avec la voix d'un personnage ;",
+            '- summarize the conversation (a period, the last N messages, "since yesterday"): the latest messages '
+            "are provided below, call get_history if you need more or older ones;",
+            "- answer a question, explain, give an opinion, analyze an exchange, roast someone (biting "
+            "joke between friends, never about looks, origin or religion), argue a debate pro/con, "
+            "speak in a character's voice;",
         ]
         if s.images_enabled:
             can.append(
-                "- créer une image avec generate_image, ou modifier/combiner des images de la discussion en passant "
-                "leurs identifiants (img1, img2…) en référence : une seule génération par demande sauf si on en "
-                "demande plusieurs explicitement ;")
+                "- create an image with generate_image, or edit/combine conversation images by passing "
+                "their identifiers (img1, img2…) as references: a single generation per request unless "
+                "several are explicitly asked for;")
         if s.transcription_enabled:
-            can.append("- les vocaux sont déjà transcrits (lignes 🎤) : si on te demande ce que dit un vocal, cite-le ;")
+            can.append("- voice notes are already transcribed (🎤 lines): if asked what a voice note says, quote it;")
         else:
             can.append(
-                "- les vocaux ne sont pas transcrits ici : si on te demande ce que dit un vocal, dis que la "
-                "transcription est coupée et qu'on peut te réécrire le contenu en texte ;")
+                "- voice notes are not transcribed here: if asked what a voice note says, say "
+                "transcription is off and the content can be retyped as text;")
         if req.context_start is not None:
             can.append(
-                "- le contexte a été vidé sur cette discussion : tu ne vois rien de ce qui s'est dit avant, et "
-                "get_history ne peut pas y remonter non plus. Si on te demande de résumer une période d'avant, "
-                "dis-le simplement au lieu d'inventer.")
+                "- the context was cleared in this conversation: you see nothing said before, and "
+                "get_history cannot reach back past it either. If asked to summarize an earlier period, "
+                "simply say so instead of inventing.")
         if not s.images_enabled:
             can.append(
-                "- la création et la modification d'images sont coupées : si on t'en demande une, dis-le simplement, "
-                "sans inventer d'image ;")
-        can.append("- get_spend pour le coût. Ton modèle, seul le propriétaire le change : si on te demande d'en "
-                   "changer, dis que ce n'est pas toi qui décides.")
+                "- image creation and editing are off: if asked for one, simply say so, "
+                "without inventing an image;")
+        can.append("- get_spend for the cost. Your model, only the owner changes it: if asked to "
+                   "change it, say it is not your call.")
         return (
-            f"Tu es {s.bot_name}, un participant{where} sur Signal. On s'adresse à toi en t'appelant par ton nom, "
-            "en te mentionnant, en répondant à un de tes messages ou en privé. Tu comprends la demande en langage "
-            "naturel et tu agis, sans demander de confirmation quand c'est clair.\n"
+            f"You are {s.bot_name}, a participant{where} on Signal. People address you by calling your name, "
+            "by mentioning you, by replying to one of your messages or in private. You understand the request in "
+            "natural language and act, without asking for confirmation when it is clear.\n"
             + prompts.PERSONALITY + "\n"
-            "Ce que tu sais faire :\n"
+            "What you can do:\n"
             + "\n".join(can) + "\n\n"
-            "Si un message est marqué [CIBLE], c'est de lui qu'on parle (« résume ça », « roast-le », « refais cette "
-            "image »). Quand on te parle directement, même juste pour te saluer ou t'interpeller "
-            f"(« wsh {s.bot_name} », « salut {s.bot_name} », « {s.bot_name} ? »), tu réponds. Réponds exactement "
-            + SILENCE + " seulement si on parle de toi à la troisième personne sans s'adresser à toi "
-            f"(« {s.bot_name} a planté hier »).\n"
-            + ("Quand tu génères une image, ton texte final est une courte légende, ou rien.\n" if s.images_enabled else "")
+            'If a message is marked [TARGET], that is what this is about ("summarize this", "roast him", "redo this '
+            'image"). When spoken to directly, even just to greet or hail you '
+            f'("yo {s.bot_name}", "hi {s.bot_name}", "{s.bot_name}?"), you answer. Reply exactly '
+            + SILENCE + " only if people talk about you in the third person without addressing you "
+            f'("{s.bot_name} crashed yesterday").\n'
+            + ("When you generate an image, your final text is a short caption, or nothing.\n" if s.images_enabled else "")
             + prompts.COMMON_RULES.strip()
             + personas
-            + f"\n\nMaintenant : {now.strftime('%A %d/%m/%Y %H:%M')} ({s.timezone})."
-            + (f" Limite d'images restante pour cette personne : {req.images_remaining}." if s.images_enabled else "")
+            + f"\n\nNow: {now.strftime('%A %d/%m/%Y %H:%M')} ({s.timezone})."
+            + (f" Remaining image allowance for this person: {req.images_remaining}." if s.images_enabled else "")
         )
 
     def _line(self, m: StoredMessage, images: dict[str, dict]) -> str:
@@ -178,7 +178,7 @@ class Agent:
         thread = [m for m in req.thread if floor is None or m.ts >= floor] or req.thread[-1:]
         quoted = req.quoted if floor is None or (req.quoted and req.quoted.ts >= floor) else None
         if window:
-            system += "\n\n[CONVERSATION — derniers messages]\n" + "\n".join(self._line(m, images) for m in window)
+            system += "\n\n[CONVERSATION - recent messages]\n" + "\n".join(self._line(m, images) for m in window)
         messages: list[dict] = [{"role": "system", "content": system}]
 
         quoted_in_thread = quoted is not None and any(m.ts == quoted.ts for m in thread)
@@ -189,7 +189,7 @@ class Agent:
             text = self._line(m, images)
             is_last = i == len(thread) - 1
             if is_last and quoted is not None and not quoted_in_thread:
-                text = "[CIBLE]\n" + self._line(quoted, images) + "\n\n" + text
+                text = "[TARGET]\n" + self._line(quoted, images) + "\n\n" + text
             content: list[dict] = [{"type": "text", "text": text}]
             for img in (m.images() + (quoted.images() if is_last and quoted and not quoted_in_thread else []))[-3:]:
                 path = Path(img["path"])
@@ -215,21 +215,21 @@ class Agent:
             msgs = self.store.recent(req.chat_id, count, before_ts=before, after_ts=after)
             if not msgs:
                 if req.context_start is not None:
-                    return ("Rien depuis le /clear : on a vidé le contexte, je ne vois pas ce qui s'est dit avant. "
-                            "Dis-moi ce qu'il faut savoir, ou demande-moi de résumer à partir de maintenant.")
-                return "Aucun message sur cette période."
+                    return ("Nothing since /clear: the context was cleared, I cannot see what was said before. "
+                            "Tell me what I need to know, or ask me to summarize from now on.")
+                return "No messages in this period."
             return "\n".join(self._line(m, images) for m in msgs)
 
         if name == "generate_image":
             if not self.settings.images_enabled:
                 return IMAGE_UNAVAILABLE
             if result.images and len(result.images) >= max(1, req.images_remaining):
-                return "Refusé : limite d'images atteinte pour cette personne."
+                return "Refused: image limit reached for this person."
             if req.images_remaining <= 0:
-                return "Refusé : limite d'images atteinte pour cette personne."
+                return "Refused: image limit reached for this person."
             prompt = str(args.get("prompt") or "").strip()
             if not prompt:
-                return "Il faut un prompt."
+                return "A prompt is required."
             refs: list[tuple[bytes, str]] = []
             unknown = []
             for key in args.get("reference_images") or []:
@@ -239,7 +239,7 @@ class Agent:
                 else:
                     unknown.append(str(key))
             if unknown:
-                return f"Images inconnues : {', '.join(unknown)}. Identifiants valides : {', '.join(images) or 'aucun'}."
+                return f"Unknown images: {', '.join(unknown)}. Valid identifiers: {', '.join(images) or 'none'}."
             ratio = str(args.get("aspect_ratio") or ("auto" if refs else "1:1"))
             if ratio not in ASPECT_RATIOS:
                 ratio = "auto" if refs else "1:1"
@@ -247,20 +247,20 @@ class Agent:
                 out = await self.llm.generate_image(model=self.settings.image_model, prompt=prompt,
                                                     aspect_ratio=ratio, references=refs[:8] or None)
             except OpenRouterError as e:
-                return f"Échec de la génération : {e}"
+                return f"Generation failed: {e}"
             result.images.append(image_for_signal(out.data, out.media_type))
             result.image_costs.append((out.model, out.cost))
-            return "Image générée, elle sera envoyée avec ta réponse. Réponds maintenant avec une courte légende."
+            return "Image generated, it will be sent with your reply. Now reply with a short caption."
 
         if name == "get_spend":
             now = datetime.now(self.tz)
             day = int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
             month = int((now - timedelta(days=30)).timestamp() * 1000)
-            return (f"Aujourd'hui : {self.store.cost_since(day, req.chat_id):.3f} $ ici, "
-                    f"{self.store.cost_since(day):.3f} $ au total. 30 jours : "
-                    f"{self.store.cost_since(month, req.chat_id):.3f} $ ici, {self.store.cost_since(month):.3f} $ au total.")
+            return (f"Today: {self.store.cost_since(day, req.chat_id):.3f} $ here, "
+                    f"{self.store.cost_since(day):.3f} $ in total. 30 days: "
+                    f"{self.store.cost_since(month, req.chat_id):.3f} $ here, {self.store.cost_since(month):.3f} $ in total.")
 
-        return f"Outil inconnu : {name}"
+        return f"Unknown tool: {name}"
 
     # ── main loop ───────────────────────────────────────────────────────────
 

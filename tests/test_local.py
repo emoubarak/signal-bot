@@ -135,5 +135,5 @@ def test_image_tool_is_offered_when_images_are_on():
 async def test_image_tool_refuses_when_images_are_off():
     """The model must not promise an image it cannot make, even if it calls the tool anyway."""
     agent = Agent(settings(image_model=""), store=None, llm=None, registry=None, tz=None)
-    result = await agent._run_tool("generate_image", {"prompt": "un chat"}, req=None, images={}, result=None)
+    result = await agent._run_tool("generate_image", {"prompt": "a cat"}, req=None, images={}, result=None)
     assert result == IMAGE_UNAVAILABLE

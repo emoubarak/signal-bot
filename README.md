@@ -12,18 +12,18 @@ Say the bot's name (here `Jarvis`) anywhere in a message, mention it, reply to o
 
 | You say | It does |
 |---|---|
-| « Jarvis, résume ce qui s'est dit depuis hier soir » | Reads the history it needs and summarises, with names and times |
-| « jarvis explique-moi ce qu'il veut dire » (replying to a message) | Answers about that message |
-| « Jarvis roast-le » (replying to someone) | Roasts the author of that message |
-| « jarvis il a dit quoi ? » (replying to a voice note) | Quotes the transcription |
-| « Jarvis fais une image d'un chat pirate en 16:9 » | Generates the image |
-| « jarvis mets un chapeau sur cette photo » (replying to a photo, or attaching one) | Edits the photo |
-| « Jarvis mélange nos deux photos » | Picks the images it saw in the conversation and combines them |
-| « Jarvis réponds en philosophe » | Adopts one of your personas (see below) |
-| « Jarvis t'as coûté combien ce mois-ci ? » | Reports its spend |
+| "Jarvis, summarize what was said since last night" | Reads the history it needs and summarises, with names and times |
+| "jarvis explain what he means" (replying to a message) | Answers about that message |
+| "Jarvis roast him" (replying to someone) | Roasts the author of that message |
+| "jarvis what did he say?" (replying to a voice note) | Quotes the transcription |
+| "Jarvis make an image of a pirate cat in 16:9" | Generates the image |
+| "jarvis put a hat on this photo" (replying to a photo, or attaching one) | Edits the photo |
+| "Jarvis combine our two photos" | Picks the images it saw in the conversation and combines them |
+| "Jarvis answer as a philosopher" | Adopts one of your personas (see below) |
+| "Jarvis how much did you cost this month?" | Reports its spend |
 | `/clear` (the owner, in any chat) | Forgets what was said before, so an old conversation stops colouring its answers |
 
-Voice notes are transcribed when they arrive, so « résume » covers them like any other message. If the name only comes up in passing (« Jarvis a planté hier »), the bot stays quiet.
+Voice notes are transcribed when they arrive, so "summarize" covers them like any other message. If the name only comes up in passing ("Jarvis crashed yesterday"), the bot stays quiet.
 
 Personas: copy `prompts_custom.example.py` to `prompts_custom.py`. Every uppercase string is a style the bot can be asked to adopt by name.
 
@@ -109,10 +109,10 @@ It fast-forwards to `origin/main` and rebuilds the bot; if the new version does 
 
 - Every message of every allowed chat goes into SQLite (`data/bot.sqlite3`) with its Signal identity (author, timestamp, replied-to message). Names come from Signal profiles, never numbers. History survives restarts.
 - Voice notes are converted with ffmpeg and transcribed on arrival; the text is stored with a 🎤 prefix. Images are kept in `data/attachments/` so they can be edited later; view-once media is not kept.
-- When the bot is addressed, the model receives: the last `CONTEXT_MESSAGES` messages with times and names, the reply chain with the bot as user/assistant turns, the message replied to as `[CIBLE]`, the attached images, and three tools: `get_history` (more or older messages), `generate_image` (prompt, format, and `img1`, `img2`… identifiers of images seen in the conversation as references), `get_spend`. Models are set in `.env` only. It can call tools up to five times before answering. `generate_image` is only offered when an image model is configured, so a bot without one says so instead of promising a picture.
+- When the bot is addressed, the model receives: the last `CONTEXT_MESSAGES` messages with times and names, the reply chain with the bot as user/assistant turns, the message replied to as `[TARGET]`, the attached images, and three tools: `get_history` (more or older messages), `generate_image` (prompt, format, and `img1`, `img2`… identifiers of images seen in the conversation as references), `get_spend`. Models are set in `.env` only. It can call tools up to five times before answering. `generate_image` is only offered when an image model is configured, so a bot without one says so instead of promising a picture.
 - Replies cut by the token limit are retried once with a bigger budget. Model errors are reported in the chat. Rate limits are per person; the image limit is also given to the model so it refuses politely.
 - Messages typed from the bot's own phone are recognised and never answered, except when they call the bot by name in a group.
-- On every start the bot says « J'ai redémarré, blipbloup, je suis le modèle X en local » in each allowed group and in private to `OWNER_NUMBER`. `X` is the model that really answers the probe, not the configured name: on a llama-swap selector that means the model it loaded (`qwen3.8-flash-next-q2_0`), which is what you want to read after a restart. If the model does not answer in time the configured name is used, and the announcement still goes out. Set `ANNOUNCE_STARTUP=false` to silence it.
+- On every start the bot says "I restarted, beep-boop, I am model X locally" in each allowed group and in private to `OWNER_NUMBER`. `X` is the model that really answers the probe, not the configured name: on a llama-swap selector that means the model it loaded (`qwen3.8-flash-next-q2_0`), which is what you want to read after a restart. If the model does not answer in time the configured name is used, and the announcement still goes out. Set `ANNOUNCE_STARTUP=false` to silence it.
 - `OWNER_NUMBER` can type `/clear` in a chat to reset its context: nothing said before is shown to the model any more, and `get_history` cannot reach past it either, so the bot stops being biased by an old conversation. It is per chat (a `/clear` in one group leaves the others alone), it survives restarts, and it deletes nothing: the messages stay in SQLite, so cost and history are intact and the floor can be moved again with another `/clear`. The bot confirms in the chat so it is visible that the command took.
 
 ## Layout
