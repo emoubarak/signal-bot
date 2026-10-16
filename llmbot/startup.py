@@ -1,8 +1,9 @@
 """Announce at startup, once the bot is connected: where it runs and on which model.
 
-The model actually serving the request is asked, not the configured name: a
-llama-swap selector such as `qwen3.8-flash-next-ablit` answers as whichever model it
-loaded (`qwen3.8-flash-next-q2_0`), and that is what the owner wants to read.
+On OpenRouter the model actually serving the request is asked, not the configured
+name. A local model is announced by its configured name without asking: any request,
+even one token, makes llama-swap load the model at boot, and it should only load on
+the first real message.
 """
 from __future__ import annotations
 
@@ -29,6 +30,8 @@ class StartupAnnouncer(ReadyHandler):
 
     async def _served_model(self) -> str:
         """The model that really answers, or the configured name if it will not say."""
+        if self.settings.local_chat:
+            return self.settings.chat_model
         try:
             reply = await self.llm.chat(
                 model=self.settings.chat_model,

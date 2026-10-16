@@ -43,20 +43,32 @@ class FakeContext:
         self.bot = bot
 
 
-async def test_announcement_names_the_model_actually_served():
-    """A llama-swap selector answers as the model it loaded, not as its own name."""
+async def test_local_model_is_announced_without_loading_it():
+    """No probe on llama-swap: a one-token request would load the model at every boot."""
     llm = ProbeLLM(served="qwen3.8-flash-next-q2_0")
-    announcer = StartupAnnouncer(settings(local_base_url="http://x:8089/v1", chat_model="qwen3.8-flash-next-ablit",
+    announcer = StartupAnnouncer(settings(local_base_url="http://x:8089/v1", chat_model="qwen3.5-4b-uncensored",
                                             owner_number="+33628508830"), llm)
     bot = FakeBot()
 
     await announcer.handle_ready(FakeContext(bot))
 
-    assert llm.calls[0]["model"] == "qwen3.8-flash-next-ablit"  # asked under its configured name
-    assert llm.calls[0]["max_tokens"] == 1  # the probe is a cheap one-token call
+    assert llm.calls == []
     text = bot.sent[0][1]
-    assert "qwen3.8-flash-next-q2_0" in text
+    assert "qwen3.5-4b-uncensored" in text
     assert "locally" in text
+
+
+async def test_openrouter_announcement_names_the_model_actually_served():
+    llm = ProbeLLM(served="deepseek/deepseek-v4.1-flash-20261001")
+    announcer = StartupAnnouncer(settings(openrouter_api_key="k", chat_model="deepseek/deepseek-v4.1-flash",
+                                          owner_number="+33628508830"), llm)
+    bot = FakeBot()
+
+    await announcer.handle_ready(FakeContext(bot))
+
+    assert llm.calls[0]["model"] == "deepseek/deepseek-v4.1-flash"  # asked under its configured name
+    assert llm.calls[0]["max_tokens"] == 1  # the probe is a cheap one-token call
+    assert "deepseek/deepseek-v4.1-flash-20261001" in bot.sent[0][1]
 
 
 async def test_announcement_says_openrouter_when_chat_is_not_local():
@@ -73,14 +85,14 @@ async def test_announcement_says_openrouter_when_chat_is_not_local():
 
 async def test_probe_failure_still_announces_the_configured_name():
     """A model that is slow to load must not silence the announcement."""
-    announcer = StartupAnnouncer(settings(local_base_url="http://x:8089/v1", chat_model="qwen3.8-flash-next-ablit",
+    announcer = StartupAnnouncer(settings(openrouter_api_key="k", chat_model="deepseek/deepseek-v4.1-flash",
                                            owner_number="+33628508830"),
                                  ProbeLLM(fail=True))
     bot = FakeBot()
 
     await announcer.handle_ready(FakeContext(bot))
 
-    assert "qwen3.8-flash-next-ablit" in bot.sent[0][1]
+    assert "deepseek/deepseek-v4.1-flash" in bot.sent[0][1]
 
 
 async def test_announcement_goes_to_owner_only_never_to_groups():
@@ -147,5 +159,5 @@ async def test_a_gguf_path_is_announced_by_its_model_name():
         async def chat(self, **kw):
             return SimpleNamespace(model="/home/x/local-inference/models/Qwen3.5-4B-Q4_K_M.gguf")
 
-    announcer = StartupAnnouncer(SimpleNamespace(chat_model="qwen3.5-4b-llm", local_chat=True), LLM())
+    announcer = StartupAnnouncer(SimpleNamespace(chat_model="qwen3.5-4b-llm", local_chat=False), LLM())
     assert await announcer._served_model() == "Qwen3.5-4B-Q4_K_M"
