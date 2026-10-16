@@ -118,6 +118,8 @@ It is **off unless `ADMIN_TOKEN` is set** in `.env`; that value is the password.
 
 ### Server and auto-deploy
 
+On a PC with Podman instead of Docker (systemd user units, like the rest of the machine's services), follow `deploy/local/README.md`: Quadlet units, a timer that applies every push to `main` with an automatic rollback, and the admin page on port 8450.
+
 `compose.yaml` runs signal-cli-rest-api and the bot (`docker compose up -d`; the bot's data stays in `data/`). Set `SIGNAL_BIND` in `.env` to the address the link page should listen on (default `127.0.0.1`), then link the account at `http://<SIGNAL_BIND>:8086/v1/qrcodelink?device_name=bot`.
 
 To deploy every push to `main`, add `deploy/autodeploy.sh` to the server's crontab:
