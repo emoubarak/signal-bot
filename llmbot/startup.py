@@ -7,6 +7,7 @@ loaded (`qwen3.8-flash-next-q2_0`), and that is what the owner wants to read.
 from __future__ import annotations
 
 import logging
+from pathlib import PurePath
 
 from signalbot import ReadyHandler, SendMessage
 
@@ -37,7 +38,9 @@ class StartupAnnouncer(ReadyHandler):
         except OpenRouterError as e:
             logger.warning("startup probe failed (%s), announcing the configured name", e)
             return self.settings.chat_model
-        return reply.model or self.settings.chat_model
+        served = reply.model or self.settings.chat_model
+        # llama-server names a model by its file path: announce "Qwen3.5-4B-Q4_K_M", not the whole path
+        return PurePath(served).stem if served.endswith(".gguf") else served
 
     async def _announcement(self) -> str:
         model = await self._served_model()

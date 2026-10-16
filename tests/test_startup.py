@@ -137,3 +137,15 @@ def test_owner_number_is_read_and_trimmed():
     env = {"SIGNAL_SERVICE": "s", "PHONE_NUMBER": "p", "OPENROUTER_API_KEY": "k"}
     assert Settings.from_env({**env, "OWNER_NUMBER": " +33628508830 "}).owner_number == "+33628508830"
     assert Settings.from_env(env).owner_number == ""
+
+
+async def test_a_gguf_path_is_announced_by_its_model_name():
+    from types import SimpleNamespace
+    from llmbot.startup import StartupAnnouncer
+
+    class LLM:
+        async def chat(self, **kw):
+            return SimpleNamespace(model="/home/x/local-inference/models/Qwen3.5-4B-Q4_K_M.gguf")
+
+    announcer = StartupAnnouncer(SimpleNamespace(chat_model="qwen3.5-4b-llm", local_chat=True), LLM())
+    assert await announcer._served_model() == "Qwen3.5-4B-Q4_K_M"
