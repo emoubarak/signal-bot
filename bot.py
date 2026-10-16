@@ -8,11 +8,14 @@ import httpx
 from dotenv import load_dotenv
 from signalbot import SignalBot
 
-from llmbot.config import Settings
+from llmbot.admin import AdminService
+from llmbot.config import LiveSettings, Settings
 from llmbot.handler import LLMHandler
 from llmbot.media import cleanup_attachments, ffmpeg_available
 from llmbot.openrouter import BASE_URL, OpenRouter
 from llmbot.personas import Registry
+from llmbot.reminders import ReminderService
+from llmbot import runtime_config
 from llmbot.startup import StartupAnnouncer
 from llmbot.store import Store
 
@@ -45,6 +48,13 @@ def main() -> None:
     settings = Settings(**{**settings.__dict__, "data_dir": data_dir})
 
     store = Store(data_dir / "bot.sqlite3")
+    env_settings = settings  # the .env alone: the admin page shows where each value comes from
+    saved = runtime_config.load(store)
+    if saved:
+        settings = runtime_config.apply(env_settings, saved)
+        log.info("settings saved from the admin page applied: %s", ", ".join(sorted(saved)))
+    live = LiveSettings(settings)
+    settings = live  # everything below reads the live view, so a change from the page applies at once
     store.prune()
     removed = cleanup_attachments(data_dir, settings.attachment_retention_days)
     if removed:
@@ -78,11 +88,19 @@ def main() -> None:
     })
     logging.getLogger("signalbot").propagate = False  # signalbot installs its own handler
     handler = LLMHandler(settings, store, llm, registry)
+    if live.admin_token:
+        try:
+            AdminService(live, env_settings, store, llm, handler).start()
+        except OSError as e:  # a busy port must not keep the bot from answering
+            log.error("admin page could not start on %s:%s (%s)", live.admin_host, live.admin_port, e)
+    else:
+        log.info("admin page is off (set ADMIN_TOKEN to turn it on)")
     bot.register(
         handler,
         contacts=settings.allowed_numbers or True,
         groups=settings.allowed_groups or True,
     )
+    bot.register(ReminderService(store))  # posts the reminders that come due, also after a restart
     if settings.announce_startup:
         # handle_ready runs once, after the groups are resolved: the announcement
         # can then name the model that actually serves it

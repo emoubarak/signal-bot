@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 
@@ -57,10 +57,22 @@ class Settings:
     describe_images: bool = False
     attachment_retention_days: int = 30
 
+    # Free tools without any account: web search, reading a link, weather, time, calculator.
+    web_tools: bool = True
+    # Free key from partner.klipy.com. Empty = the send_gif tool is not offered.
+    klipy_api_key: str = ""
+    # Tools switched off one by one from the admin page (names as the model sees them).
+    disabled_tools: list[str] = field(default_factory=list)
+
+    # Admin web page: only started when a token is set. Env only, never editable from the page itself.
+    admin_token: str = ""
+    admin_host: str = "127.0.0.1"
+    admin_port: int = 8090
+
     # Uptime Kuma push URL, pinged every minute while signal-cli answers. Empty = off.
     kuma_push_url: str = ""
 
-    # Say "I restarted" in every allowed group and in private to the owner.
+    # Say "I restarted" in private to the owner.
     announce_startup: bool = True
 
     @property
@@ -73,7 +85,14 @@ class Settings:
 
     @property
     def images_enabled(self) -> bool:
-        return bool(self.image_model)
+        return bool(self.image_model) and "generate_image" not in self.disabled_tools
+
+    @property
+    def gifs_enabled(self) -> bool:
+        return bool(self.klipy_api_key) and "send_gif" not in self.disabled_tools
+
+    def tool_enabled(self, name: str) -> bool:
+        return name not in self.disabled_tools
 
     @property
     def transcription_enabled(self) -> bool:
@@ -109,7 +128,42 @@ class Settings:
             context_messages=int(e.get("CONTEXT_MESSAGES") or cls.context_messages),
             max_output_tokens=int(e.get("MAX_OUTPUT_TOKENS") or cls.max_output_tokens),
             describe_images=_bool(e.get("DESCRIBE_IMAGES"), cls.describe_images),
+            web_tools=_bool(e.get("WEB_TOOLS"), cls.web_tools),
+            klipy_api_key=(e.get("KLIPY_API_KEY") or "").strip(),
+            disabled_tools=_list(e.get("DISABLED_TOOLS")),
+            admin_token=(e.get("ADMIN_TOKEN") or "").strip(),
+            admin_host=e.get("ADMIN_HOST") or cls.admin_host,
+            admin_port=int(e.get("ADMIN_PORT") or cls.admin_port),
             attachment_retention_days=int(e.get("ATTACHMENT_RETENTION_DAYS") or cls.attachment_retention_days),
             kuma_push_url=e.get("KUMA_PUSH_URL") or "",
             announce_startup=_bool(e.get("ANNOUNCE_STARTUP"), cls.announce_startup),
         )
+
+
+class LiveSettings:
+    """The settings the running bot reads, which the admin page can change.
+
+    Every `settings.x` read goes to the current snapshot, so the handler, the agent and the
+    announcer (which all hold this object) see a change on their next request without being
+    rebuilt. A snapshot itself stays immutable: a request never sees half an update."""
+
+    def __init__(self, base: Settings) -> None:
+        object.__setattr__(self, "_snapshot", base)
+
+    @property
+    def snapshot(self) -> Settings:
+        return self._snapshot
+
+    def replace_with(self, new: Settings) -> None:
+        object.__setattr__(self, "_snapshot", new)
+
+    def update(self, **changes) -> Settings:
+        new = replace(self._snapshot, **changes)
+        object.__setattr__(self, "_snapshot", new)
+        return new
+
+    def __getattr__(self, name: str):
+        return getattr(self._snapshot, name)
+
+    def __setattr__(self, name: str, value) -> None:
+        raise AttributeError("use update(): a snapshot is replaced as a whole")

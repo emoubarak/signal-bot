@@ -1,0 +1,22 @@
+# signal-cli-rest-api : le compte Signal du bot. Quadlet : systemd --user génère signal-rest.service.
+# Installé dans ~/.config/containers/systemd/ (voir deploy/local/README.md).
+[Unit]
+Description=signal-cli-rest-api (compte Signal du bot)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+ContainerName=signal-rest
+Image=docker.io/bbernhard/signal-cli-rest-api:latest
+Environment=MODE=json-rpc
+# Le port n'est publié que sur la boucle locale : lier un appareil se fait depuis la page d'administration du bot.
+PublishPort=127.0.0.1:8086:8080
+# Les données du compte lié (clés Signal) : à sauvegarder, à ne jamais perdre.
+Volume=signal-data:/home/.local/share/signal-cli
+
+[Service]
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

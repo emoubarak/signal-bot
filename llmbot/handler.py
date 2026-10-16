@@ -48,9 +48,18 @@ class LLMHandler(DataMessageHandler):
         # answers run as background tasks: signalbot has only three consumers, and
         # an image request holding one for a minute would hold up the next messages
         self._tasks: set[asyncio.Task] = set()
-        names = [settings.bot_name, *settings.bot_aliases]
-        self._name_re = re.compile(
+        self._name_re = self._compile_names()
+
+    def _compile_names(self) -> re.Pattern:
+        names = [self.settings.bot_name, *self.settings.bot_aliases]
+        return re.compile(
             r"(?<![\w@])(" + "|".join(re.escape(_fold(n)) for n in names if n.strip()) + r")(?![\w@])", re.I)
+
+    def refresh(self) -> None:
+        """Take in what the admin page changed that was derived once at startup: the names
+        people call the bot by, and the timezone."""
+        self._name_re = self._compile_names()
+        self.tz = self.agent.tz = ZoneInfo(self.settings.timezone)
 
     # ── properties ──────────────────────────────────────────────────────────
 
@@ -353,8 +362,9 @@ class LLMHandler(DataMessageHandler):
             logger.info("[%s] stays silent: name only mentioned in passing", rec.chat_id[:12])
             return
         if result.images:
+            label = "gif" if all(t == "image/gif" for _, t in result.images) else "generated image"
             await self._say(c, rec, result.text, attachments=result.images, kind=KIND_IMAGE,
-                            stored_text=f"[generated image] {result.text}".strip())
+                            stored_text=f"[{label}] {result.text}".strip())
         else:
             await self._say(c, rec, result.text)
 

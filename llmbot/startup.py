@@ -20,7 +20,7 @@ PROBE = "ping"
 
 
 class StartupAnnouncer(ReadyHandler):
-    """Says hello in every allowed group, and in private to the owner."""
+    """Says hello in private to the owner."""
 
     def __init__(self, settings: Settings, llm: OpenRouter) -> None:
         self.settings = settings
@@ -45,20 +45,15 @@ class StartupAnnouncer(ReadyHandler):
         return f"I restarted, beep-boop, I am model {model} {where}."
 
     async def handle_ready(self, context) -> None:
-        text = await self._announcement()
-        # The owner's private chat, so a restart is visible even when no group is
-        # configured: the bot writes to the number that owns it.
-        recipients = list(self.settings.allowed_groups)
-        if self.settings.owner_number:
-            recipients.append(self.settings.owner_number)
-        if not recipients:
-            logger.info("no startup announcement: no group configured and no OWNER_NUMBER")
+        # The owner's private chat only: no group announcement, so restarts
+        # stay silent in groups.
+        if not self.settings.owner_number:
+            logger.info("no startup announcement: no OWNER_NUMBER configured")
             return
-        sent = 0
-        for recipient in recipients:
-            try:
-                await context.bot.messages.send(SendMessage(text=text), recipient)
-                sent += 1
-            except Exception as e:  # one unreachable chat must not stop the others
-                logger.warning("startup announcement to %s failed: %s", recipient, e)
-        logger.info("startup announcement sent to %d/%d chat(s): %s", sent, len(recipients), text)
+        text = await self._announcement()
+        try:
+            await context.bot.messages.send(SendMessage(text=text), self.settings.owner_number)
+        except Exception as e:
+            logger.warning("startup announcement to %s failed: %s", self.settings.owner_number, e)
+            return
+        logger.info("startup announcement sent to %s: %s", self.settings.owner_number, text)

@@ -81,27 +81,40 @@ class OpenRouter:
         timeout: float = 180.0,
         client: httpx.AsyncClient | None = None,
     ) -> None:
+        self._timeout = timeout
+        # clients replaced by reconfigure(): requests in flight may still use them, closed with the bot
+        self._retired: list[httpx.AsyncClient] = []
+        self._models: dict[str, ModelInfo] | None = None
+        self._build(api_key, base_url, local, client)
+
+    def _build(self, api_key: str, base_url: str, local: bool, client: httpx.AsyncClient | None = None) -> None:
         self.local = local
         headers = {"X-Title": "signal-llm-bot"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
         if not local:
             headers["HTTP-Referer"] = "https://github.com/emoubarak/signal-bot"
-        self._client = client or httpx.AsyncClient(base_url=base_url, timeout=timeout, headers=headers)
+        self._client = client or httpx.AsyncClient(base_url=base_url, timeout=self._timeout, headers=headers)
         # Images and voice notes are OpenRouter-only: a second client, only built
         # when chat is local and the key is set.
         self._openrouter: httpx.AsyncClient | None = None
         if local and api_key:
             self._openrouter = httpx.AsyncClient(
                 base_url=BASE_URL,
-                timeout=timeout,
+                timeout=self._timeout,
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "HTTP-Referer": "https://github.com/emoubarak/signal-bot",
                     "X-Title": "signal-llm-bot",
                 },
             )
-        self._models: dict[str, ModelInfo] | None = None
+
+    def reconfigure(self, api_key: str, *, base_url: str = BASE_URL, local: bool = False) -> None:
+        """Switch provider or key while the bot runs (admin page). New requests use the new clients;
+        the old ones are kept until close() so a request in flight is not cut."""
+        self._retired.extend(c for c in (self._client, self._openrouter) if c is not None)
+        self._build(api_key, base_url, local)
+        self._models = None
 
     @property
     def _media_client(self) -> httpx.AsyncClient:
@@ -117,6 +130,8 @@ class OpenRouter:
         await self._client.aclose()
         if self._openrouter is not None:
             await self._openrouter.aclose()
+        for old in self._retired:
+            await old.aclose()
 
     async def _post(self, path: str, payload: dict, deadline: float,
                     client: httpx.AsyncClient | None = None) -> dict:

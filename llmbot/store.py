@@ -6,6 +6,7 @@ author): that is Signal's own message identity, and what a quote points to.
 from __future__ import annotations
 
 import json
+import unicodedata
 import sqlite3
 import time
 from dataclasses import dataclass, field
@@ -40,11 +41,29 @@ CREATE TABLE IF NOT EXISTS usage (
 );
 CREATE INDEX IF NOT EXISTS usage_user_ts ON usage (user_id, kind, ts);
 
+CREATE TABLE IF NOT EXISTS reminders (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id      TEXT    NOT NULL,
+    author_id    TEXT    NOT NULL,
+    author_name  TEXT    NOT NULL,
+    due_ts       INTEGER NOT NULL,
+    message      TEXT    NOT NULL,
+    created_ts   INTEGER NOT NULL,
+    attempts     INTEGER NOT NULL DEFAULT 0,
+    done         INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS reminders_due ON reminders (done, due_ts);
+
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
 """
+
+
+def _fold(text: str) -> str:
+    """Lower-case without accents, so "resto" finds "Resto" and "été" finds "ete"."""
+    return "".join(c for c in unicodedata.normalize("NFD", text.lower()) if unicodedata.category(c) != "Mn")
 
 
 @dataclass
@@ -169,6 +188,50 @@ class Store:
                 (chat, chat, keep_per_chat),
             )
         self._db.commit()
+
+    # ── search ──────────────────────────────────────────────────────────────
+
+    def search(self, chat_id: str, query: str, *, limit: int = 20, after_ts: int | None = None,
+               before_ts: int | None = None, scan: int = 5000) -> list[StoredMessage]:
+        """Messages of a chat containing every word of `query`, case and accents ignored, newest `limit`
+        in reading order. Looks through the last `scan` messages: plenty for a group, and a LIKE would not
+        fold accents."""
+        words = [w for w in _fold(query).split() if w]
+        if not words:
+            return []
+        hits = [m for m in reversed(self.recent(chat_id, scan, before_ts=before_ts, after_ts=after_ts))
+                if (t := _fold(m.text)) and all(w in t for w in words)]
+        return list(reversed(hits[:limit]))
+
+    # ── reminders ───────────────────────────────────────────────────────────
+
+    def add_reminder(self, chat_id: str, author_id: str, author_name: str, due_ts: int, message: str,
+                     now_ts: int) -> int:
+        cur = self._db.execute(
+            "INSERT INTO reminders (chat_id, author_id, author_name, due_ts, message, created_ts) VALUES (?,?,?,?,?,?)",
+            (chat_id, author_id, author_name, due_ts, message, now_ts))
+        self._db.commit()
+        return int(cur.lastrowid)
+
+    def pending_reminders(self, chat_id: str) -> list[sqlite3.Row]:
+        return self._db.execute("SELECT * FROM reminders WHERE chat_id=? AND done=0 ORDER BY due_ts", (chat_id,)).fetchall()
+
+    def due_reminders(self, now_ts: int, max_attempts: int = 5) -> list[sqlite3.Row]:
+        return self._db.execute("SELECT * FROM reminders WHERE done=0 AND due_ts<=? AND attempts<? ORDER BY due_ts",
+                                (now_ts, max_attempts)).fetchall()
+
+    def finish_reminder(self, reminder_id: int) -> None:
+        self._db.execute("UPDATE reminders SET done=1 WHERE id=?", (reminder_id,))
+        self._db.commit()
+
+    def reminder_failed(self, reminder_id: int) -> None:
+        self._db.execute("UPDATE reminders SET attempts=attempts+1 WHERE id=?", (reminder_id,))
+        self._db.commit()
+
+    def cancel_reminder(self, chat_id: str, reminder_id: int) -> bool:
+        cur = self._db.execute("UPDATE reminders SET done=1 WHERE id=? AND chat_id=? AND done=0", (reminder_id, chat_id))
+        self._db.commit()
+        return cur.rowcount > 0
 
     # ── usage / rate limiting ───────────────────────────────────────────────
 

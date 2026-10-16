@@ -1,0 +1,34 @@
+# Le bot Signal. Quadlet : systemd --user génère signal-bot.service.
+# L'image `localhost/signal-bot:latest` est construite par deploy/local/update.sh (premier lancement compris).
+[Unit]
+Description=Bot Signal (LLM)
+After=signal-rest.service network-online.target
+Wants=signal-rest.service network-online.target
+
+[Container]
+ContainerName=signal-bot
+Image=localhost/signal-bot:latest
+# Réseau hôte, comme Kuma : le bot parle à llama-swap (127.0.0.1:8089) et à Kuma (127.0.0.1:3001), qui
+# n'écoutent que sur la boucle locale de la machine.
+Network=host
+# Clés et mots de passe : hors du dépôt (dossier signal-bot-secrets, droits 600).
+EnvironmentFile=%h/repos/emoubarak/signal-bot/signal-bot-secrets/bot.env
+Environment=SIGNAL_SERVICE=127.0.0.1:8086
+Environment=DATA_DIR=/app/data
+Environment=TZ=Europe/Paris
+# La page d'administration n'écoute que sur l'adresse Tailscale de la machine (jamais le LAN).
+Environment=ADMIN_HOST=100.111.115.112
+Environment=ADMIN_PORT=8450
+# La base SQLite et les pièces jointes. Volume nommé : SELinux n'étiquette pas un dossier de ~/repos.
+Volume=signal-bot-data:/app/data
+# Le bot finit ses réponses en cours à l'arrêt (60 s au plus).
+StopTimeout=75
+
+[Service]
+# Comme llama-swap : attendre que l'adresse Tailscale existe, sinon la page d'administration ne peut pas se lier.
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 900); do ip -4 -o addr show | grep -q " 100.111.115.112/" && exit 0; sleep 1; done; exit 1'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

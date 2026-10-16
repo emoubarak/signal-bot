@@ -5,3 +5,4 @@ tests
 .git
 .pytest_cache
 __pycache__
+signal-bot-secrets

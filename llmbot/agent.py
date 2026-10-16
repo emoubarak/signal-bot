@@ -1,5 +1,5 @@
 """Natural-language mode: the model reads the request, decides what to do and
-calls tools (history, image generation, spend, model switch), then answers."""
+calls tools (history, image generation, spend, web search, weather…), then answers."""
 from __future__ import annotations
 
 import json
@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from llmbot import prompts
+from llmbot import prompts, reminders, webtools
 from llmbot.personas import Registry
 from llmbot.config import Settings
 from llmbot.context import format_message
@@ -38,6 +38,35 @@ GET_HISTORY_TOOL = {"type": "function", "function": {
         "since_hours": {"type": "number", "description": "Only keep messages from the last N hours."},
     }},
 }}
+SEARCH_MESSAGES_TOOL = {"type": "function", "function": {
+    "name": "search_messages",
+    "description": "Finds old messages of this conversation by keywords (all the words must appear; accents and "
+                   "capitals do not matter). Use it to find who said what, when, about a topic. get_history only "
+                   "reads the latest messages.",
+    "parameters": {"type": "object", "properties": {
+        "query": {"type": "string", "description": "Words to look for, e.g. 'restaurant lyon'."},
+        "limit": {"type": "integer", "description": "How many matches to return (default 15, max 50)."},
+        "since_hours": {"type": "number", "description": "Only look at the last N hours."},
+    }, "required": ["query"]},
+}}
+REMIND_TOOL = {"type": "function", "function": {
+    "name": "remind",
+    "description": "Posts a message in this conversation later. Work out the time yourself from the current date "
+                   "and time you were given.",
+    "parameters": {"type": "object", "properties": {
+        "message": {"type": "string", "description": "Exactly what to post when the time comes, in the language of "
+                                                     "the conversation, addressed to whoever asked."},
+        "in_minutes": {"type": "number", "description": "Post it this many minutes from now (for 'in 20 minutes')."},
+        "at": {"type": "string", "description": "Or the moment itself, group time: YYYY-MM-DD HH:MM."},
+    }, "required": ["message"]},
+}}
+LIST_REMINDERS_TOOL = {"type": "function", "function": {
+    "name": "list_reminders",
+    "description": "Lists the reminders still waiting in this conversation, with their numbers. Pass cancel_id to cancel one.",
+    "parameters": {"type": "object", "properties": {
+        "cancel_id": {"type": "integer", "description": "Number of the reminder to cancel."},
+    }},
+}}
 GENERATE_IMAGE_TOOL = {"type": "function", "function": {
     "name": "generate_image",
     "description": "Generates an image, or edits/combines conversation images passed as references.",
@@ -56,12 +85,32 @@ GET_SPEND_TOOL = {"type": "function", "function": {
 }}
 
 
+# What the prompt says about each web tool, in the order they are listed.
+WEB_TOOL_HINTS = [
+    ("web_search", "web_search for anything recent or that you do not know for sure (never guess a price, score or news)"),
+    ("read_page", "read_page to read a link"),
+    ("get_weather", "get_weather"),
+    ("get_time", "get_time for another timezone"),
+    ("calculate", "calculate for any arithmetic"),
+    ("pick_random", "pick_random for heads or tails, dice and drawing between options (you cannot be random yourself)"),
+]
+
+
 def tools_for(settings: Settings) -> list[dict]:
     """The tools the model is offered, given what this bot can actually do."""
     tools = [GET_HISTORY_TOOL]
+    if settings.tool_enabled("search_messages"):
+        tools.append(SEARCH_MESSAGES_TOOL)
+    if settings.tool_enabled("remind"):
+        tools.extend([REMIND_TOOL, LIST_REMINDERS_TOOL])
     if settings.images_enabled:
         tools.append(GENERATE_IMAGE_TOOL)
-    tools.append(GET_SPEND_TOOL)
+    if settings.tool_enabled("get_spend"):
+        tools.append(GET_SPEND_TOOL)
+    if settings.web_tools:
+        tools.extend(t for t in webtools.TOOLS if settings.tool_enabled(t["function"]["name"]))
+    if settings.gifs_enabled:
+        tools.append(webtools.SEND_GIF_TOOL)
     return tools
 
 
@@ -134,8 +183,23 @@ class Agent:
             can.append(
                 "- image creation and editing are off: if asked for one, simply say so, "
                 "without inventing an image;")
-        can.append("- get_spend for the cost. Your model, only the owner changes it: if asked to "
-                   "change it, say it is not your call.")
+        if s.tool_enabled("search_messages"):
+            can.append("- search_messages to find what someone said earlier by keywords (get_history only reads the "
+                       "latest messages);")
+        if s.tool_enabled("remind"):
+            can.append("- remind to post a message in this chat later (\"remind us at 8pm\", \"in 20 minutes\"), "
+                       "list_reminders to see or cancel them; work the time out from the date and time you are given;")
+        if s.web_tools:
+            lookups = [text for name, text in WEB_TOOL_HINTS if s.tool_enabled(name)]
+            if lookups:
+                can.append("- look things up: " + ", ".join(lookups) +
+                           ". If a tool fails, say you could not look it up;")
+        if s.gifs_enabled:
+            can.append("- send_gif to react with an animated GIF when it says it better than words (rarely, "
+                       "never for a serious subject; a single one per reply);")
+        can.append(("- get_spend for the cost. " if s.tool_enabled("get_spend") else "- ") +
+                   "Your model, only the owner changes it: if asked to change it, say it is not your call.")
+        rules = Agent._tool_rules(s)
         return (
             f"You are {s.bot_name}, a participant{where} on Signal. People address you by calling your name, "
             "by mentioning you, by replying to one of your messages or in private. You understand the request in "
@@ -143,7 +207,8 @@ class Agent:
             + prompts.PERSONALITY + "\n"
             "What you can do:\n"
             + "\n".join(can) + "\n\n"
-            'If a message is marked [TARGET], that is what this is about ("summarize this", "roast him", "redo this '
+            + (("Tool rules, always followed:\n" + "\n".join(rules) + "\n\n") if rules else "")
+            + 'If a message is marked [TARGET], that is what this is about ("summarize this", "roast him", "redo this '
             'image"). When spoken to directly, even just to greet or hail you '
             f'("yo {s.bot_name}", "hi {s.bot_name}", "{s.bot_name}?"), you answer. Reply exactly '
             + SILENCE + " only if people talk about you in the third person without addressing you "
@@ -154,6 +219,24 @@ class Agent:
             + f"\n\nNow: {now.strftime('%A %d/%m/%Y %H:%M')} ({s.timezone})."
             + (f" Remaining image allowance for this person: {req.images_remaining}." if s.images_enabled else "")
         )
+
+    @staticmethod
+    def _tool_rules(s) -> list[str]:
+        """Imperatives for the cases a small model answers from memory instead of calling the tool (measured on
+        Qwen3.5 4B: 11 of 18 tool scenes triggered without these, 15 with). Only for tools that are switched on."""
+        rules = []
+        if s.web_tools and s.tool_enabled("web_search"):
+            rules.append("- A question about anything current or that you cannot know for certain (a ranking, a score, a "
+                         "price, news, the latest version of something): call web_search FIRST, then answer from what it "
+                         "returned. Never answer such a question from memory.")
+        if s.web_tools and s.tool_enabled("calculate"):
+            rules.append("- Any arithmetic, even simple (splitting a bill, a discount): call calculate.")
+        recall = "call get_history" + ("; to find a past message by topic: call search_messages"
+                                       if s.tool_enabled("search_messages") else "")
+        rules.append(f"- A request to recap, summarize or recall what was said: {recall}.")
+        if s.web_tools and s.tool_enabled("read_page"):
+            rules.append("- A link in the conversation to read or summarize: call read_page.")
+        return rules
 
     def _line(self, m: StoredMessage, images: dict[str, dict]) -> str:
         line = format_message(m, self.tz, self._reply_name)
@@ -203,6 +286,8 @@ class Agent:
 
     async def _run_tool(self, name: str, args: dict, req: AgentRequest, images: dict[str, dict],
                         result: AgentResult) -> str:
+        if name != "get_history" and not self.settings.tool_enabled(name):
+            return "This tool is switched off."
         if name == "get_history":
             count = max(1, min(int(args.get("count") or 100), MAX_TOOL_HISTORY))
             after = None
@@ -252,6 +337,60 @@ class Agent:
             result.image_costs.append((out.model, out.cost))
             return "Image generated, it will be sent with your reply. Now reply with a short caption."
 
+        if name == "send_gif":
+            if not self.settings.gifs_enabled:
+                return "GIFs are off on this bot."
+            if any(t == "image/gif" for _, t in result.images):
+                return "Refused: one GIF per reply."
+            gif, message = await webtools.find_gif(str(args.get("query") or ""), self.settings.klipy_api_key)
+            if gif is not None:
+                result.images.append((gif, "image/gif"))
+            return message
+
+        if name == "search_messages":
+            query = str(args.get("query") or "").strip()
+            if not query:
+                return "A query is required."
+            limit = max(1, min(int(args.get("limit") or 15), 50))
+            after = None
+            if args.get("since_hours"):
+                after = int((time.time() - float(args["since_hours"]) * 3600) * 1000)
+            if req.context_start is not None:  # a /clear forbids reaching past it
+                after = max(after or 0, req.context_start)
+            found = self.store.search(req.chat_id, query, limit=limit, after_ts=after, before_ts=req.thread[-1].ts)
+            if not found:
+                return "No message matches those words."
+            return "\n".join(self._line(m, images) for m in found)
+
+        if name == "remind":
+            message = str(args.get("message") or "").strip()
+            if not message:
+                return "A message is required: what to post when the time comes."
+            if len(message) > reminders.MAX_MESSAGE:
+                return f"Message too long ({reminders.MAX_MESSAGE} characters at most)."
+            due, problem = reminders.parse_when(args.get("at"), args.get("in_minutes"), self.tz, datetime.now(self.tz))
+            if due is None:
+                return problem
+            if len(self.store.pending_reminders(req.chat_id)) >= reminders.MAX_PENDING:
+                return f"Too many reminders waiting in this chat ({reminders.MAX_PENDING}): cancel one first."
+            rid = self.store.add_reminder(req.chat_id, req.user_id, req.thread[-1].author_name, due, message,
+                                          int(time.time() * 1000))
+            return f"Reminder #{rid} set for {reminders.when_text(due, self.tz)}. It will be posted in this chat."
+
+        if name == "list_reminders":
+            if args.get("cancel_id") not in (None, ""):
+                try:
+                    cancel = int(args["cancel_id"])
+                except (TypeError, ValueError):
+                    return "cancel_id must be a reminder number."
+                return (f"Reminder #{cancel} cancelled." if self.store.cancel_reminder(req.chat_id, cancel)
+                        else f"There is no waiting reminder #{cancel} in this chat.")
+            waiting = self.store.pending_reminders(req.chat_id)
+            if not waiting:
+                return "No reminder is waiting in this chat."
+            return "\n".join(f"#{r['id']} {reminders.when_text(r['due_ts'], self.tz)} (asked by {r['author_name']}): {r['message']}"
+                             for r in waiting)
+
         if name == "get_spend":
             now = datetime.now(self.tz)
             day = int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
@@ -259,6 +398,11 @@ class Agent:
             return (f"Today: {self.store.cost_since(day, req.chat_id):.3f} $ here, "
                     f"{self.store.cost_since(day):.3f} $ in total. 30 days: "
                     f"{self.store.cost_since(month, req.chat_id):.3f} $ here, {self.store.cost_since(month):.3f} $ in total.")
+
+        if self.settings.web_tools:
+            out = await webtools.run(name, args, self.tz)
+            if out is not None:
+                return out
 
         return f"Unknown tool: {name}"
 

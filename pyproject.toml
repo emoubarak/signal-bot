@@ -9,6 +9,7 @@ dependencies = [
     "signalbot>=2.1.0",
     "httpx>=0.28",
     "python-dotenv>=1.1",
+    "ddgs>=9",
 ]
 
 [dependency-groups]
@@ -24,3 +25,6 @@ testpaths = ["tests"]
 
 [tool.setuptools]
 packages = ["llmbot"]
+
+[tool.setuptools.package-data]
+llmbot = ["static/*.html"]

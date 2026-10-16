@@ -1,0 +1,7 @@
+[Unit]
+Description=Met à jour le bot Signal depuis origin/main
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/share/signal-bot/src/deploy/local/update.sh
+TimeoutStartSec=1200

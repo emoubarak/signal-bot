@@ -21,6 +21,10 @@ services:
     environment:
       SIGNAL_SERVICE: signal-rest:8080
       DATA_DIR: /app/data
+      ADMIN_HOST: 0.0.0.0  # inside the container only: the host side is ADMIN_BIND below
+    ports:
+      # Admin page (only when ADMIN_TOKEN is set). Local to the host by default; ADMIN_BIND=<tailscale ip> to reach it from your devices.
+      - "${ADMIN_BIND:-127.0.0.1}:8090:8090"
     volumes:
       - ./data:/app/data
     depends_on:

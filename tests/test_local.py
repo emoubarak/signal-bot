@@ -123,13 +123,13 @@ def test_defaults_keep_images_and_transcription_on():
 
 
 def test_image_tool_is_not_offered_when_images_are_off():
-    names = [t["function"]["name"] for t in tools_for(settings(image_model=""))]
-    assert names == ["get_history", "get_spend"]
+    names = [t["function"]["name"] for t in tools_for(settings(image_model="", web_tools=False))]
+    assert names == ["get_history", "search_messages", "remind", "list_reminders", "get_spend"]
 
 
 def test_image_tool_is_offered_when_images_are_on():
-    names = [t["function"]["name"] for t in tools_for(settings(image_model="meta/muse-image"))]
-    assert names == ["get_history", "generate_image", "get_spend"]
+    names = [t["function"]["name"] for t in tools_for(settings(image_model="meta/muse-image", web_tools=False))]
+    assert names == ["get_history", "search_messages", "remind", "list_reminders", "generate_image", "get_spend"]
 
 
 async def test_image_tool_refuses_when_images_are_off():

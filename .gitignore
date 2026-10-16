@@ -28,3 +28,6 @@ signal-bot-backups/
 # Auto-deploy state and log
 deploy/.failed
 deploy/autodeploy.log
+
+# Secrets (never committed)
+signal-bot-secrets/

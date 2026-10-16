@@ -83,7 +83,7 @@ async def test_probe_failure_still_announces_the_configured_name():
     assert "qwen3.8-flash-next-ablit" in bot.sent[0][1]
 
 
-async def test_announcement_goes_to_every_allowed_group_and_the_owner():
+async def test_announcement_goes_to_owner_only_never_to_groups():
     announcer = StartupAnnouncer(
         settings(allowed_groups=["THE SILENCER", "Family"], owner_number="+33628508830",
                  local_base_url="http://x:8089/v1"),
@@ -92,7 +92,7 @@ async def test_announcement_goes_to_every_allowed_group_and_the_owner():
 
     await announcer.handle_ready(FakeContext(bot))
 
-    assert [r for r, _ in bot.sent] == ["THE SILENCER", "Family", "+33628508830"]
+    assert [r for r, _ in bot.sent] == ["+33628508830"]
 
 
 async def test_owner_only_when_no_group_is_configured():
@@ -105,20 +105,21 @@ async def test_owner_only_when_no_group_is_configured():
     assert [r for r, _ in bot.sent] == ["+33628508830"]
 
 
-async def test_unreachable_chat_does_not_stop_the_others():
+async def test_unreachable_owner_sends_nothing_and_does_not_raise():
     announcer = StartupAnnouncer(
         settings(allowed_groups=["Family", "Dead"], owner_number="+33628508830",
                  local_base_url="http://x:8089/v1"),
         ProbeLLM())
-    bot = FakeBot(fail_for={"Dead"})
+    bot = FakeBot(fail_for={"+33628508830"})
 
     await announcer.handle_ready(FakeContext(bot))
 
-    assert [r for r, _ in bot.sent] == ["Family", "+33628508830"]
+    assert bot.sent == []
 
 
-async def test_nothing_is_sent_without_a_destination():
-    announcer = StartupAnnouncer(settings(local_base_url="http://x:8089/v1"), ProbeLLM())
+async def test_nothing_is_sent_without_an_owner():
+    announcer = StartupAnnouncer(
+        settings(allowed_groups=["Family"], local_base_url="http://x:8089/v1"), ProbeLLM())
     bot = FakeBot()
 
     await announcer.handle_ready(FakeContext(bot))
