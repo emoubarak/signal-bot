@@ -69,7 +69,7 @@ TRANSCRIBE_MODEL=                               # empty: it ignores audio input 
 OPENROUTER_API_KEY=
 ```
 
-The model must support tool calls, which is what the bot drives its history, image and spend tools with. With `IMAGE_MODEL` or `TRANSCRIBE_MODEL` empty the bot stops offering that capability and says so when asked, rather than promising something it cannot do. Keep `OPENROUTER_API_KEY` and the two models set to keep images and voice notes while chat stays local.
+The model must support tool calls, which is what the bot drives its history, image and spend tools with. With `IMAGE_MODEL` or `TRANSCRIBE_MODEL` empty the bot stops offering that capability and says so when asked, rather than promising something it cannot do. Keep `OPENROUTER_API_KEY` and the two models set to keep images and voice notes while chat stays local. Reasoning is switched off for a local model (`enable_thinking: false`), which cuts an answer from 7-14 s to 2-4 s on Qwen3.8; a model whose template ignores that option is unaffected.
 
 ### Configuration
 

@@ -188,6 +188,9 @@ class OpenRouter:
             payload["provider"] = {"sort": "price"}
             # a chat bot's replies gain little from reasoning and it makes them 2-3x slower
             payload["reasoning"] = {"enabled": False}
+        else:
+            # same reason, for a local Qwen-style template (llama.cpp, vLLM): 7-14 s down to 2-4 s per answer
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
         if tools:
             payload["tools"] = tools
         deadline = LOCAL_CHAT_DEADLINE if self.local else CHAT_DEADLINE

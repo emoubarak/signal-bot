@@ -36,6 +36,7 @@ async def test_local_chat_sends_no_openrouter_only_fields():
     assert "provider" not in payloads[0]
     assert "reasoning" not in payloads[0]
     assert "usage" not in payloads[0]
+    assert payloads[0]["chat_template_kwargs"] == {"enable_thinking": False}   # a local reasoning model answers at once
 
 
 async def test_local_chat_keeps_tools():
