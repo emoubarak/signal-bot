@@ -91,6 +91,10 @@ class Settings:
     def gifs_enabled(self) -> bool:
         return bool(self.klipy_api_key) and "send_gif" not in self.disabled_tools
 
+    @property
+    def memes_enabled(self) -> bool:
+        return self.web_tools and "make_meme" not in self.disabled_tools
+
     def tool_enabled(self, name: str) -> bool:
         return name not in self.disabled_tools
 

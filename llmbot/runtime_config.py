@@ -17,7 +17,7 @@ OVERRIDES_KEY = "config_overrides"
 PHONE_RE = re.compile(r"^\+\d{6,15}$")
 
 # Every tool the page can switch off, as the model sees its name.
-TOOL_SWITCHES = ["generate_image", "send_gif", "get_spend", "web_search", "read_page", "get_weather", "get_time",
+TOOL_SWITCHES = ["generate_image", "send_gif", "make_meme", "get_spend", "web_search", "read_page", "get_weather", "get_time",
                  "calculate", "pick_random", "search_messages", "remind"]
 
 

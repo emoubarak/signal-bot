@@ -111,6 +111,8 @@ def tools_for(settings: Settings) -> list[dict]:
         tools.extend(t for t in webtools.TOOLS if settings.tool_enabled(t["function"]["name"]))
     if settings.gifs_enabled:
         tools.append(webtools.SEND_GIF_TOOL)
+    if settings.memes_enabled:
+        tools.append(webtools.MAKE_MEME_TOOL)
     return tools
 
 
@@ -118,6 +120,7 @@ def tools_for(settings: Settings) -> list[dict]:
 class AgentResult:
     text: str
     images: list[tuple[bytes, str]] = field(default_factory=list)
+    memes: int = 0
     image_costs: list[tuple[str, float]] = field(default_factory=list)  # (model, cost)
     chat_cost: float = 0.0
     chat_model: str = ""
@@ -197,6 +200,10 @@ class Agent:
         if s.gifs_enabled:
             can.append("- send_gif to react with an animated GIF when it says it better than words (rarely, "
                        "never for a serious subject; a single one per reply);")
+        if s.memes_enabled:
+            can.append("- make_meme to answer with a meme (a classic template, captions in the group's language, "
+                       "about what is happening in the chat); one per reply, when someone asks for one or the "
+                       "joke is obvious;")
         can.append(("- get_spend for the cost. " if s.tool_enabled("get_spend") else "- ") +
                    "Your model, only the owner changes it: if asked to change it, say it is not your call.")
         rules = Agent._tool_rules(s)
@@ -345,6 +352,17 @@ class Agent:
             gif, message = await webtools.find_gif(str(args.get("query") or ""), self.settings.klipy_api_key)
             if gif is not None:
                 result.images.append((gif, "image/gif"))
+            return message
+
+        if name == "make_meme":
+            if not self.settings.memes_enabled:
+                return "Memes are off on this bot."
+            if result.memes:
+                return "Refused: one meme per reply."
+            png, message = await webtools.make_meme(str(args.get("template") or ""), args.get("lines"))
+            if png is not None:
+                result.images.append((png, "image/png"))
+                result.memes += 1
             return message
 
         if name == "search_messages":

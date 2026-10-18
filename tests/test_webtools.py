@@ -22,7 +22,7 @@ def settings(**overrides) -> Settings:
 def test_web_tools_are_offered_by_default():
     names = [t["function"]["name"] for t in tools_for(settings())]
     assert names == ["get_history", "search_messages", "remind", "list_reminders", "generate_image", "get_spend",
-                     "web_search", "read_page", "get_weather", "get_time", "calculate", "pick_random"]
+                     "web_search", "read_page", "get_weather", "get_time", "calculate", "pick_random", "make_meme"]
 
 
 def test_web_tools_can_be_switched_off():
@@ -349,3 +349,94 @@ def test_calculate_refuses_huge_results_quickly(expr):
 def test_calculate_still_does_big_but_reasonable_numbers():
     assert webtools.calculate("2**100") == "1267650600228229401496703205376"
     assert len(webtools.calculate("10**300")) == 301
+
+
+# ── memes ───────────────────────────────────────────────────────────────────
+
+PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"0" * 64
+
+
+MEME_LIST = [{"id": "drake", "name": "Drakeposting", "lines": 2, "keywords": ["hotline", "bling"]},
+             {"id": "boardroom", "name": "Boardroom Meeting Suggestion", "lines": 3, "keywords": ["suggestion"]},
+             {"id": "cmm", "name": "Change My Mind", "lines": 1, "keywords": []}]
+
+
+@pytest.fixture(autouse=True)
+def fresh_meme_cache(monkeypatch):
+    monkeypatch.setattr(webtools, "_meme_templates", (0.0, {}))
+
+
+def meme_transport(seen=None, post_status=200, templates=MEME_LIST):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/templates":
+            return httpx.Response(200, json=templates) if templates is not None else httpx.Response(500)
+        if seen is not None:
+            seen.append(request)
+        if request.method == "POST":
+            if post_status != 200:
+                return httpx.Response(post_status, json={"error": "nope"})
+            return httpx.Response(200, json={"url": "https://api.memegen.link/images/drake/a/b.png"})
+        return httpx.Response(200, content=PNG_BYTES, headers={"content-type": "image/png"})
+    return httpx.MockTransport(handler)
+
+
+def test_meme_tool_is_offered_by_default_and_follows_the_switches():
+    assert "make_meme" in [t["function"]["name"] for t in tools_for(settings())]
+    assert "make_meme" not in [t["function"]["name"] for t in tools_for(settings(disabled_tools=frozenset({"make_meme"})))]
+    assert "make_meme" not in [t["function"]["name"] for t in tools_for(settings(web_tools=False))]
+
+
+async def test_make_meme_posts_the_captions_as_json_and_returns_the_png():
+    seen = []
+    async with httpx.AsyncClient(transport=meme_transport(seen)) as client:
+        png, message = await webtools.make_meme(" Drake ", ["no / ?", "yes_ 100%"], client)
+    assert png == PNG_BYTES and "will be sent" in message
+    assert json.loads(seen[0].content) == {"template_id": "drake", "text_lines": ["no / ?", "yes_ 100%"],
+                                           "extension": "png"}
+
+
+async def test_make_meme_suggests_the_closest_templates_for_a_name_or_a_theme():
+    async with httpx.AsyncClient(transport=meme_transport()) as client:
+        png, message = await webtools.make_meme("Boardroom meeting", ["a", "b", "c"], client)
+        assert png is None and "boardroom (Boardroom Meeting Suggestion, 3 lines)" in message
+        png, message = await webtools.make_meme("zzz", ["a"], client)
+        assert png is None and "no close match" in message
+
+
+async def test_make_meme_still_tries_when_the_template_list_is_unavailable():
+    async with httpx.AsyncClient(transport=meme_transport(templates=None)) as client:
+        png, _ = await webtools.make_meme("drake", ["a", "b"], client)
+    assert png == PNG_BYTES
+
+
+async def test_make_meme_reports_an_unknown_template_and_missing_captions():
+    async with httpx.AsyncClient(transport=meme_transport(post_status=404, templates=None)) as client:
+        png, message = await webtools.make_meme("nope", ["a"], client)
+    assert png is None and "Unknown template" in message
+    png, message = await webtools.make_meme("../etc", ["a"])
+    assert png is None and "Unknown template" in message
+    png, message = await webtools.make_meme("drake", ["", " "])
+    assert png is None and "Captions" in message
+
+
+async def test_make_meme_survives_the_service_being_down():
+    def boom(request):
+        raise httpx.ConnectError("down")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(boom)) as client:
+        png, message = await webtools.make_meme("drake", ["a", "b"], client)
+    assert png is None and "unavailable" in message
+
+
+async def test_agent_attaches_one_meme_per_reply(monkeypatch):
+    from llmbot.agent import AgentResult
+    agent = Agent(settings(), store=None, llm=None, registry=None, tz=TZ)
+    result = AgentResult(text="")
+
+    async def fake(template, lines, client=None):
+        return PNG_BYTES, "Meme made"
+    monkeypatch.setattr(webtools, "make_meme", fake)
+    args = {"template": "drake", "lines": ["a", "b"]}
+    first = await agent._run_tool("make_meme", args, req=None, images={}, result=result)
+    second = await agent._run_tool("make_meme", args, req=None, images={}, result=result)
+    assert first == "Meme made" and result.images == [(PNG_BYTES, "image/png")]
+    assert second.startswith("Refused") and len(result.images) == 1

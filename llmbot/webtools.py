@@ -11,6 +11,7 @@ import operator
 import random
 import re
 import socket
+import time
 from datetime import datetime
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
@@ -81,6 +82,37 @@ SEND_GIF_TOOL = {"type": "function", "function": {
     "parameters": {"type": "object", "properties": {
         "query": {"type": "string", "description": "2 to 4 keywords in English describing the reaction or scene."},
     }, "required": ["query"]},
+}}
+MEME_TEMPLATES = (
+    "drake (2: rejects / prefers)", "pooh (2: basic / fancy)", "db (3: other girl / boyfriend / girlfriend)",
+    "gb (4: galaxy brain, ever bigger idea)", "midwit (3: low / midwit / genius)", "fine (2: this is fine)",
+    "woman-cat (2: woman yelling / cat at table)", "spiderman (2: two identical people pointing)",
+    "gru (4: plan, plan, twist, same twist)", "exit (3: exit 12 off ramp)", "ds (3: daily struggle)",
+    "pigeon (3: is this a ...?)", "cmm (1: change my mind)", "rollsafe (2: smart thinking)",
+    "mordor (2: one does not simply)", "wonka (2: condescending)", "spongebob (2: mocking)", "doge (2)",
+    "buzz (2: X, X everywhere)", "success (2: small win)", "fry (2: not sure if)", "stonks (2)",
+    "wddth (2: we don't do that here)", "hagrid (2: I should not have said that)", "bad (2: you should feel bad)",
+    "kermit (2: but that's none of my business)",
+)
+MEME_URL = "https://api.memegen.link/images"
+MEME_TEMPLATES_URL = "https://api.memegen.link/templates"
+MEME_TEMPLATES_TTL = 86400
+MEME_SUGGESTIONS = 5
+_meme_templates: tuple[float, dict[str, dict]] = (0.0, {})
+MEME_MAX_BYTES = 2_000_000
+MEME_LINE_CHARS = 120
+MAKE_MEME_TOOL = {"type": "function", "function": {
+    "name": "make_meme",
+    "description": "Makes a meme image from a classic template and sends it with your reply. Write the captions in "
+                   "the language of the conversation, short and punchy, about what is going on in the chat. One per "
+                   "reply. Common templates (number of lines): " + ", ".join(MEME_TEMPLATES) + ". There are about 200 more: "
+                   "give a theme or a name instead of an id and the tool answers with the closest ones.",
+    "parameters": {"type": "object", "properties": {
+        "template": {"type": "string", "description": "Template id (the word before the parenthesis), or a "
+                                                         "name or theme to search, e.g. \"distracted\"."},
+        "lines": {"type": "array", "items": {"type": "string"},
+                  "description": "One caption per line of the template, in order, each under 12 words."},
+    }, "required": ["template", "lines"]},
 }}
 TOOLS = [WEB_SEARCH_TOOL, READ_PAGE_TOOL, GET_WEATHER_TOOL, GET_TIME_TOOL, CALCULATE_TOOL, PICK_RANDOM_TOOL]
 NAMES = {t["function"]["name"] for t in TOOLS}
@@ -460,3 +492,74 @@ async def find_gif(query: str, api_key: str, client: httpx.AsyncClient | None = 
     if not raw.startswith(b"GIF8"):
         return None, "The file was not a GIF. Answer with words."
     return raw, "GIF found, it will be sent with your reply. Now reply with a few words at most, or nothing."
+
+
+# ── memes (memegen.link: free, no key) ──────────────────────────────────────
+
+async def _meme_templates_by_id(client: httpx.AsyncClient) -> dict[str, dict]:
+    """Every memegen template by id, fetched once a day. Empty when the list cannot be had: the post decides."""
+    global _meme_templates
+    fetched, known = _meme_templates
+    if known and time.monotonic() - fetched < MEME_TEMPLATES_TTL:
+        return known
+    try:
+        r = await client.get(MEME_TEMPLATES_URL)
+        r.raise_for_status()
+        known = {t["id"]: t for t in r.json() if isinstance(t, dict) and t.get("id")}
+    except (httpx.HTTPError, ValueError, TypeError):
+        return known
+    _meme_templates = (time.monotonic(), known)
+    return known
+
+
+def closest_memes(query: str, known: dict[str, dict]) -> list[str]:
+    """Templates whose id, name or keywords share words with `query`, best first, as "id (name, N lines)"."""
+    words = set(re.findall(r"[a-z0-9]+", query.lower()))
+    scored = []
+    for t in known.values():
+        text = " ".join([t["id"], str(t.get("name") or ""), *map(str, t.get("keywords") or [])]).lower()
+        have = set(re.findall(r"[a-z0-9]+", text))
+        score = len(words & have) * 2 + sum(1 for w in words if len(w) > 3 and w in text)
+        if score:
+            scored.append((-score, t["id"], t))
+    scored.sort(key=lambda x: x[:2])
+    return [f"{t['id']} ({t.get('name')}, {t.get('lines')} lines)" for _, _, t in scored[:MEME_SUGGESTIONS]]
+
+
+async def make_meme(template: str, lines, client: httpx.AsyncClient | None = None) -> tuple[bytes | None, str]:
+    """(PNG bytes, message for the model). memegen escapes the captions itself when they are posted as JSON."""
+    template = template.strip().lower()
+    asked = template
+    template = re.sub(r"\s+", "-", template) if re.fullmatch(r"[a-z0-9 -]{1,40}", template) else template
+    captions = [str(l).strip()[:MEME_LINE_CHARS] for l in lines] if isinstance(lines, list) else []
+    if not re.fullmatch(r"[a-z0-9-]{1,40}", template):
+        return None, "Unknown template: use one id from the list."
+    if not any(captions):
+        return None, "Captions are required: one per line of the template."
+    own = client is None
+    client = client or httpx.AsyncClient(timeout=HTTP_TIMEOUT, headers={"User-Agent": USER_AGENT})
+    try:
+        known = await _meme_templates_by_id(client)
+        if known and template not in known:
+            near = closest_memes(asked, known)
+            return None, ("Unknown template. Closest: " + ", ".join(near) + ". Call again with one of these ids."
+                          if near else "Unknown template: no close match, pick an id from the list.")
+        r = await client.post(MEME_URL, json={"template_id": template, "text_lines": captions, "extension": "png"})
+        if r.status_code in (404, 422):
+            return None, "Unknown template: use one id from the list."
+        r.raise_for_status()
+        url = r.json().get("url") or ""
+        if not url.startswith("https://api.memegen.link/"):
+            return None, "Meme service answered oddly. Answer with words."
+        img = await client.get(url)
+        img.raise_for_status()
+        raw = img.content
+    except (httpx.HTTPError, ValueError) as e:
+        logger.warning("meme failed: %s", type(e).__name__)
+        return None, "Meme service unavailable. Answer with words."
+    finally:
+        if own:
+            await client.aclose()
+    if not raw.startswith(b"\x89PNG") or len(raw) > MEME_MAX_BYTES:
+        return None, "The meme could not be made. Answer with words."
+    return raw, "Meme made, it will be sent with your reply. Now reply with a few words at most, or nothing."

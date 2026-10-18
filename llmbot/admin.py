@@ -45,6 +45,7 @@ CATALOG_TTL = 1800
 TOOL_INFO = {
     "generate_image": ("Créer des images", "Dessine ou retouche une image à la demande. Payant, à l'image, via OpenRouter.", "Images"),
     "send_gif": ("Envoyer un GIF", "Réagit avec un GIF animé trouvé sur Klipy. Gratuit.", "Images"),
+    "make_meme": ("Faire un meme", "Répond avec un meme (Drake, Distracted Boyfriend…) légendé sur ce qui se passe dans le groupe, avec memegen.link. Gratuit.", "Images"),
     "web_search": ("Chercher sur internet", "Trouve une info récente (score, prix, actualité) avec DuckDuckGo. Gratuit.", "Internet"),
     "read_page": ("Lire un lien", "Lit une page web collée dans le groupe pour la résumer. Gratuit.", "Internet"),
     "get_weather": ("Météo", "Météo du jour et des trois prochains jours pour une ville, avec Open-Meteo. Gratuit.", "Internet"),
@@ -196,7 +197,7 @@ class AdminService:
                     reason = "Choisis un modèle d'image dans Fournisseur."
                 elif name == "send_gif":
                     reason = "Il manque la clé Klipy."
-                elif name in {t["function"]["name"] for t in webtools.TOOLS}:
+                elif name in {t["function"]["name"] for t in webtools.TOOLS} | {"make_meme"}:
                     reason = "Les outils internet sont éteints (interrupteur général)."
             out.append({"name": name, "label": label, "help": help_, "group": group, "enabled": wanted,
                         "locked": False, "reason": reason, "working": name in offered})
@@ -312,6 +313,12 @@ class AdminService:
                 return {"ok": False, "text": message}
             return {"ok": True, "text": f"GIF trouvé ({len(data) // 1024} Ko).",
                     "gif": "data:image/gif;base64," + base64.b64encode(data).decode() if len(data) < 3_000_000 else None}
+        if name == "make_meme":
+            data, message = asyncio.run(webtools.make_meme("drake", [x.strip() for x in text.split(",")][:2]))
+            if data is None:
+                return {"ok": False, "text": message}
+            return {"ok": True, "text": f"Meme fait ({len(data) // 1024} Ko).",
+                    "gif": "data:image/png;base64," + base64.b64encode(data).decode()}
         if name not in {t["function"]["name"] for t in webtools.TOOLS}:
             return {"ok": False, "text": "Cet outil ne s'essaie pas d'ici."}
         if name == "pick_random":
