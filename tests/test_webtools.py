@@ -416,6 +416,36 @@ async def test_make_meme_takes_a_template_named_by_its_own_name_and_its_line_rol
         assert png is None and "db takes exactly 3 lines" in message
 
 
+async def test_make_meme_refuses_a_subject_taken_from_another_conversation():
+    async with httpx.AsyncClient(transport=meme_transport()) as client:
+        png, message = await webtools.make_meme(
+            "drake", ["le linge de Simo", "le nez de Doge"], client,
+            subject="le linge de Simo", request_text="Mop fais un meme sur les chauves")
+    assert png is None and "subject must come from the request" in message
+
+
+async def test_make_meme_refuses_captions_that_recycle_its_own_last_jokes():
+    async with httpx.AsyncClient(transport=meme_transport()) as client:
+        png, message = await webtools.make_meme(
+            "drake", ["le linge de Simo", "le nez de Doge"], client,
+            subject="les chauves", request_text="Mop fais un meme sur les chauves",
+            own_text="Simo est innocent, son linge aussi. Le nez de Doge a tranché.")
+    assert png is None and "come from your own earlier replies" in message
+    async with httpx.AsyncClient(transport=meme_transport()) as client:
+        png, message = await webtools.make_meme(
+            "drake", ["les chauves au bureau", "et le crâne qui brille"], client,
+            subject="les chauves", request_text="Mop fais un meme sur les chauves",
+            own_text="Simo est innocent, son linge aussi. Le nez de Doge a tranché.")
+    assert png == PNG_BYTES
+
+
+async def test_make_meme_takes_the_captions_as_one_multiline_string():
+    async with httpx.AsyncClient(transport=meme_transport()) as client:
+        png, message = await webtools.make_meme("drake", "- les chauves\n2. ils puent", client,
+                                                subject="les chauves", request_text="meme sur les chauves")
+    assert png == PNG_BYTES and "will be sent" in message
+
+
 async def test_make_meme_refuses_a_caption_too_long_for_the_slots():
     async with httpx.AsyncClient(transport=meme_transport()) as client:
         png, message = await webtools.make_meme("drake", ["x" * 70, "ok"], client)
@@ -451,10 +481,10 @@ async def test_agent_attaches_one_meme_per_reply(monkeypatch):
     agent = Agent(settings(), store=None, llm=None, registry=None, tz=TZ)
     result = AgentResult(text="")
 
-    async def fake(template, lines, client=None):
+    async def fake(template, lines, client=None, **kwargs):
         return PNG_BYTES, "Meme made"
     monkeypatch.setattr(webtools, "make_meme", fake)
-    args = {"template": "drake", "lines": ["a", "b"]}
+    args = {"template": "drake", "subject": "a", "lines": ["a", "b"]}
     first = await agent._run_tool("make_meme", args, req=None, images={}, result=result)
     second = await agent._run_tool("make_meme", args, req=None, images={}, result=result)
     assert first == "Meme made" and result.images == [(PNG_BYTES, "image/png")]

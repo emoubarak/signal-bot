@@ -121,6 +121,7 @@ class AgentResult:
     text: str
     images: list[tuple[bytes, str]] = field(default_factory=list)
     memes: int = 0
+    meme_subject: str = ""
     image_costs: list[tuple[str, float]] = field(default_factory=list)  # (model, cost)
     chat_cost: float = 0.0
     chat_model: str = ""
@@ -201,10 +202,10 @@ class Agent:
             can.append("- send_gif to react with an animated GIF when it says it better than words (rarely, "
                        "never for a serious subject; a single one per reply);")
         if s.memes_enabled:
-            can.append("- make_meme to answer with a meme: a classic template, as many caption lines as the "
-                       "template takes, in the language of the conversation, about exactly what was asked "
-                       "(the chat itself only when that is the subject), 8 words max per line; one per reply, "
-                       "when someone asks for one or the joke lands better as a meme;")
+            can.append("- make_meme to answer with a meme: a classic template, the subject of the request copied "
+                       "from the request itself (never a name, an object or a joke picked up earlier), and the "
+                       "captions about that subject in the language of the request; one per reply, when someone "
+                       "asks for one or the joke lands better as a meme;")
         can.append(("- get_spend for the cost. " if s.tool_enabled("get_spend") else "- ") +
                    "Your model, only the owner changes it: if asked to change it, say it is not your call.")
         rules = Agent._tool_rules(s)
@@ -360,10 +361,19 @@ class Agent:
                 return "Memes are off on this bot."
             if result.memes:
                 return "Refused: one meme per reply."
-            png, message = await webtools.make_meme(str(args.get("template") or ""), args.get("lines"))
+            template = str(args.get("template") or "").strip()
+            request_text = req.thread[-1].text if req and req.thread else ""
+            subject = str(args.get("subject") or "").strip() or request_text
+            # the bot's own messages, text and images alike (an image is stored as KIND_IMAGE,
+            # not KIND_BOT, so the author is what tells them apart)
+            own_text = "\n".join(m.text for m in (*req.window, *req.thread[:-1])
+                                 if m.text and (m.is_bot or m.author_id == self.settings.phone_number)) if req else ""
+            png, message = await webtools.make_meme(template, args.get("lines"), subject=subject,
+                                                    request_text=request_text, own_text=own_text)
             if png is not None:
                 result.images.append((png, "image/png"))
                 result.memes += 1
+                result.meme_subject = subject
             return message
 
         if name == "search_messages":
@@ -461,6 +471,15 @@ class Agent:
         # the model sometimes copies the "[HH:MM] Name : " header of the transcript it was shown
         result.text = re.sub(rf"^\s*(\[\d{{1,2}}:\d{{2}}\]\s*)?{re.escape(self.settings.bot_name)}\s*:\s*", "",
                              result.text, flags=re.IGNORECASE) if result.text.lstrip().startswith("[") else result.text
+        # after a meme, a text that only recycles the conversation (no word of the subject) is the
+        # running joke leaking in again: the meme goes out alone rather than with an off-subject line
+        if result.memes and result.text.strip() and result.meme_subject:
+            said = webtools.meme_words(result.text)
+            about = webtools.meme_words(result.meme_subject)
+            chat = webtools.meme_words("\n".join(m.text for m in req.window if m.text))
+            if chat & said and not (about & said):
+                logger.info("text off the meme subject, dropped: %s", result.text[:80])
+                result.text = ""
         if result.text.strip() == SILENCE or (not result.text.strip() and not result.images):
             result.silent = not result.images
             result.text = ""

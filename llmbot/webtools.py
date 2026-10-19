@@ -12,6 +12,7 @@ import random
 import re
 import socket
 import time
+import unicodedata
 from datetime import datetime
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
@@ -126,19 +127,30 @@ MEME_MAX_BYTES = 2_000_000
 # Memegen shrinks the text to fit its slots, so a long line turns into an unreadable
 # smear: ~8 words is what stays readable on a phone.
 MEME_LINE_CHARS = 60
+# Words that carry no subject: they cannot count as "the meme is about it".
+MEME_STOPWORDS = frozenset("""
+a an the of to in on for with and or is are be it this that about make made meme memes image images
+le la les l un une des du de d et ou a au aux en sur pour par avec sans dans qui que qu ce cet cette ces
+mon ma mes ton ta tes son sa ses notre votre leur leurs il elle ils elles on je tu nous vous
+est sont etait ete etre avoir fait fais faire faut peu plus tres bien tout tous toute toutes ca cela
+""".split())
 MAKE_MEME_TOOL = {"type": "function", "function": {
     "name": "make_meme",
-    "description": "Makes a meme image from a classic template and sends it with your reply. Write the captions in "
-                   "the language of the conversation, about exactly what was asked, as many lines as the template "
-                   "takes, 8 words max per line. One per reply. Common templates, with what each line is for: "
+    "description": "Makes a meme image from a classic template and sends it with your reply. Give the subject of "
+                   "the request exactly as it is asked, then the captions about it, in the language of the request, "
+                   "as many lines as the template takes, 8 words max per line. One per reply. "
+                   "Common templates, with what each line is for: "
                    + "; ".join(f"{tid} ({n}: {roles})" for tid, n, roles in MEME_TEMPLATES) + ". There are about 200 more: "
                    "give a theme or a name instead of an id and the tool answers with the closest ones.",
     "parameters": {"type": "object", "properties": {
         "template": {"type": "string", "description": "Template id (the word before the parenthesis), or a "
                                                          "name or theme to search, e.g. \"distracted\"."},
+        "subject": {"type": "string", "description": "The subject of the request, copied from the message (2 to 6 "
+                                                    "words): what the meme is about. Never a name, an object or a "
+                                                    "joke picked up earlier in the conversation."},
         "lines": {"type": "array", "items": {"type": "string"},
-                  "description": "One caption per line of the template, in the order given above, 8 words max each."},
-    }, "required": ["template", "lines"]},
+                  "description": "Optional draft, one caption per line of the template in the order given above."},
+    }, "required": ["template", "subject"]},
 }}
 TOOLS = [WEB_SEARCH_TOOL, READ_PAGE_TOOL, GET_WEATHER_TOOL, GET_TIME_TOOL, CALCULATE_TOOL, PICK_RANDOM_TOOL]
 NAMES = {t["function"]["name"] for t in TOOLS}
@@ -553,6 +565,18 @@ def meme_hint(t: dict) -> str:
     return f"{t.get('id')} ({t.get('name')}{tail}"
 
 
+def meme_words(text: str) -> set[str]:
+    """The words that carry the subject, lower-case and without accents, plural folded.
+
+    "Les chauves au bureau" gives {"chauve", "bureau"}: enough to tell a caption
+    about the request from a caption about yesterday's running joke."""
+    folded = "".join(c for c in unicodedata.normalize("NFD", str(text).lower())
+                     if unicodedata.category(c) != "Mn")
+    words = re.findall(r"[a-z0-9]+", folded)
+    return {w[:-1] if len(w) > 4 and w.endswith(("s", "x")) else w
+            for w in words if len(w) > 2 and w not in MEME_STOPWORDS}
+
+
 def closest_memes(query: str, known: dict[str, dict]) -> list[str]:
     """Templates whose id, name or keywords share words with `query`, best first."""
     words = set(re.findall(r"[a-z0-9]+", query.lower()))
@@ -578,20 +602,52 @@ def named_template(asked: str, known: dict[str, dict]) -> str | None:
     return None
 
 
-async def make_meme(template: str, lines, client: httpx.AsyncClient | None = None) -> tuple[bytes | None, str]:
+def caption_list(lines) -> list[str]:
+    """The captions the model sent, as a list: it sometimes writes them as one string
+    with line breaks, sometimes with bullets or numbers."""
+    if isinstance(lines, str):
+        lines = lines.splitlines()
+    if not isinstance(lines, list):
+        return []
+    out = []
+    for line in lines:
+        text = re.sub(r"^\s*(?:[-•*]|\d+[.)])\s*", "", str(line)).strip().strip('"“”')
+        if text:
+            out.append(text)
+    return out
+
+
+async def make_meme(template: str, lines, client: httpx.AsyncClient | None = None, *,
+                    subject: str = "", request_text: str = "", own_text: str = "") -> tuple[bytes | None, str]:
     """(PNG bytes, message for the model). memegen escapes the captions itself when they are posted as JSON.
 
-    The captions are checked against the template (how many lines, how long) before
-    anything is generated: memegen would accept a wrong number and drop the extra
-    lines, which is how a meme ends up meaning nothing."""
-    template = template.strip().lower()
+    The captions are checked before anything is generated: their number and length
+    against the template (memegen would accept a wrong number and drop the extra
+    lines, which is how a meme ends up meaning nothing), the subject against the
+    request, and the words against the bot's own replies, which it recycles when
+    the conversation pulls it away from the request."""
+    template = str(template).strip().lower()
     asked = template
     template = re.sub(r"\s+", "-", template) if re.fullmatch(r"[a-z0-9 -]{1,40}", template) else template
-    captions = [str(l).strip() for l in lines] if isinstance(lines, list) else []
+    captions = caption_list(lines)
     if not re.fullmatch(r"[a-z0-9-]{1,40}", template):
         return None, "Unknown template: use one id from the list."
-    if not any(captions):
+    if not captions:
         return None, "Captions are required: one per line of the template."
+    asked_words = meme_words(request_text) if request_text else set()
+    if subject and asked_words and not (meme_words(subject) & asked_words):
+        return None, ("The subject must come from the request (\"" + str(request_text)[:90] + "\"): it is not "
+                      "there. Call make_meme again with the subject of the request, not something picked up "
+                      "earlier in the conversation.")
+    if own_text and captions:
+        # The model recycles its own last jokes: a meme asked about one subject came out
+        # about the running gag of the evening. Two words lifted from its own replies and
+        # absent from the request are enough to send it back to the subject.
+        recycled = (meme_words(" ".join(captions)) & meme_words(own_text)) - asked_words
+        if len(recycled) >= 2:
+            return None, ("These words come from your own earlier replies, not from the request: "
+                          + ", ".join(sorted(recycled)) + ". Call make_meme again with captions about the request "
+                          "only, with no callback to what you said before.")
     long_lines = [str(i + 1) for i, c in enumerate(captions) if len(c) > MEME_LINE_CHARS]
     if long_lines:
         return None, (f"Caption {', '.join(long_lines)} is too long ({MEME_LINE_CHARS} characters max, 8 words is "
@@ -631,4 +687,4 @@ async def make_meme(template: str, lines, client: httpx.AsyncClient | None = Non
     if not raw.startswith(b"\x89PNG") or len(raw) > MEME_MAX_BYTES:
         return None, "The meme could not be made. Answer with words."
     return raw, (f"Meme made ({template}, {len(captions)} line{'s' if len(captions) > 1 else ''}) and it will be sent "
-                 "with your reply. Now reply with a few words at most, or nothing.")
+                 "with your reply. Now reply with a few words at most, on that subject too, or nothing.")

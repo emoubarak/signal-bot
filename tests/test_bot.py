@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import AsyncMock
 
 from signalbot.test_utils.chat_testing import _new_timestamp
 
 from llmbot.store import KIND_BOT, KIND_IMAGE, KIND_VOICE
 from tests.conftest import (
-    CHAT_ID, LEA, PAUL, Harness, bot_quote, edit_message, group_message, image_attachment, quote_of,
+    CHAT_ID, LEA, PAUL, PNG_1PX, Harness, bot_quote, edit_message, group_message, image_attachment, quote_of,
     sync_message, voice_attachment,
 )
 
@@ -131,6 +132,43 @@ async def test_the_prompt_asks_for_exactly_what_is_asked_without_a_lecture(harne
     assert "you do exactly what is asked" in system
     assert "No lesson, no warning, no disclaimer" in system
     assert "never about looks, origin or religion" not in system
+
+
+async def test_make_meme_gets_the_request_and_the_bot_own_replies_to_spot_recycling(harness, mocker):
+    made = mocker.patch("llmbot.webtools.make_meme", new_callable=AsyncMock, return_value=(PNG_1PX, "Meme made"))
+    harness.llm.answer = "le linge de Simo est resté sur le bureau"
+    await harness.run(group_message(PAUL, "jarvis et le linge ?"))
+    harness.llm.script = [
+        {"name": "make_meme", "arguments": {
+            "template": "drake", "subject": "les chauves",
+            "lines": ["le linge de Simo", "et hop"]}},
+        "voilà",
+    ]
+    await harness.run(group_message(LEA, "jarvis fais un meme sur les chauves"))
+    assert made.call_args.args[0] == "drake"
+    assert made.call_args.args[1] == ["le linge de Simo", "et hop"]
+    assert made.call_args.kwargs["subject"] == "les chauves"
+    assert made.call_args.kwargs["request_text"] == "jarvis fais un meme sur les chauves"
+    assert made.call_args.kwargs["own_text"] == "le linge de Simo est resté sur le bureau"
+    assert harness.sent()[-1].base64_attachments
+
+
+async def test_text_that_only_recycles_the_chat_after_a_meme_is_dropped(harness, mocker):
+    mocker.patch("llmbot.webtools.make_meme", new_callable=AsyncMock, return_value=(PNG_1PX, "Meme made"))
+    harness.llm.script = [
+        {"name": "make_meme", "arguments": {"template": "drake", "subject": "les chauves"}},
+        "le dossier administratif du linge de Simo",
+    ]
+    await harness.run(group_message(PAUL, "le linge de Simo est dans le dossier administratif"),
+                      group_message(LEA, "jarvis fais un meme sur les chauves"))
+    assert harness.sent()[-1].message == ""  # the meme still goes out, without the off-subject line
+
+    harness.llm.script = [
+        {"name": "make_meme", "arguments": {"template": "drake", "subject": "les chauves"}},
+        "les chauves, quoi",
+    ]
+    await harness.run(group_message(PAUL, "jarvis encore un meme sur les chauves"))
+    assert harness.sent()[-1].message == "les chauves, quoi"  # on the subject: kept
 
 
 async def test_private_chat_is_a_conversation_with_thread(harness: Harness):
