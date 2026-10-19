@@ -83,35 +83,61 @@ SEND_GIF_TOOL = {"type": "function", "function": {
         "query": {"type": "string", "description": "2 to 4 keywords in English describing the reaction or scene."},
     }, "required": ["query"]},
 }}
+# The templates worth proposing by name: id, number of caption lines, and what each
+# line is for (read from the templates' own examples on memegen). The line roles are
+# what the model needs: without them it writes captions that land on the wrong part
+# of the image, and memegen silently drops the extra ones.
 MEME_TEMPLATES = (
-    "drake (2: rejects / prefers)", "pooh (2: basic / fancy)", "db (3: other girl / boyfriend / girlfriend)",
-    "gb (4: galaxy brain, ever bigger idea)", "midwit (3: low / midwit / genius)", "fine (2: this is fine)",
-    "woman-cat (2: woman yelling / cat at table)", "spiderman (2: two identical people pointing)",
-    "gru (4: plan, plan, twist, same twist)", "exit (3: exit 12 off ramp)", "ds (3: daily struggle)",
-    "pigeon (3: is this a ...?)", "cmm (1: change my mind)", "rollsafe (2: smart thinking)",
-    "mordor (2: one does not simply)", "wonka (2: condescending)", "spongebob (2: mocking)", "doge (2)",
-    "buzz (2: X, X everywhere)", "success (2: small win)", "fry (2: not sure if)", "stonks (2)",
-    "wddth (2: we don't do that here)", "hagrid (2: I should not have said that)", "bad (2: you should feel bad)",
-    "kermit (2: but that's none of my business)",
+    ("drake", 2, "what he turns down / what he prefers"),
+    ("pooh", 2, "the plain thing / the fancy version"),
+    ("db", 3, "what catches his eye / him / the one he ignores"),
+    ("gb", 4, "one idea, ever bigger brain (1 dumb → 4 genius)"),
+    ("midwit", 3, "the simple take / the over-thinker's rant / the simple take again"),
+    ("fine", 2, "what is burning / \"this is fine\""),
+    ("woman-cat", 2, "the one screaming / the one screamed at"),
+    ("spiderman", 2, "first twin / second twin (they are the same)"),
+    ("gru", 4, "the plan / the step / what goes wrong / the same thing again"),
+    ("exit", 3, "the option it swerves to / the one it leaves behind / who is driving"),
+    ("ds", 3, "option one / option two / the third button"),
+    ("pigeon", 3, "the character / the thing they look at / what they call it"),
+    ("cmm", 1, "the opinion on the sign"),
+    ("rollsafe", 2, "the good thing / why it works (the loophole)"),
+    ("mordor", 2, "one does not simply / the thing done"),
+    ("wonka", 2, "the condescending setup / the punchline"),
+    ("spongebob", 2, "the sentence / the same sentence mocked"),
+    ("doge", 2, "such thing / very quality"),
+    ("buzz", 2, "the thing / the thing everywhere"),
+    ("success", 2, "the lucky break / why it worked out"),
+    ("fry", 2, "not sure if X / or Y"),
+    ("stonks", 2, "the move / stonks"),
+    ("wddth", 2, "the situation / we don't do that here"),
+    ("hagrid", 2, "the thing said / I should not have said that"),
+    ("bad", 2, "the bad thing / and you should feel bad"),
+    ("kermit", 2, "the gossip / but that's none of my business"),
+    ("grumpycat", 2, "I hope that what does not kill you / tries again"),
 )
+MEME_ROLES = {tid: f"{n} lines: {roles}" for tid, n, roles in MEME_TEMPLATES}
 MEME_URL = "https://api.memegen.link/images"
 MEME_TEMPLATES_URL = "https://api.memegen.link/templates"
 MEME_TEMPLATES_TTL = 86400
 MEME_SUGGESTIONS = 5
 _meme_templates: tuple[float, dict[str, dict]] = (0.0, {})
 MEME_MAX_BYTES = 2_000_000
-MEME_LINE_CHARS = 120
+# Memegen shrinks the text to fit its slots, so a long line turns into an unreadable
+# smear: ~8 words is what stays readable on a phone.
+MEME_LINE_CHARS = 60
 MAKE_MEME_TOOL = {"type": "function", "function": {
     "name": "make_meme",
     "description": "Makes a meme image from a classic template and sends it with your reply. Write the captions in "
-                   "the language of the conversation, short and punchy, about what is going on in the chat. One per "
-                   "reply. Common templates (number of lines): " + ", ".join(MEME_TEMPLATES) + ". There are about 200 more: "
+                   "the language of the conversation, about exactly what was asked, as many lines as the template "
+                   "takes, 8 words max per line. One per reply. Common templates, with what each line is for: "
+                   + "; ".join(f"{tid} ({n}: {roles})" for tid, n, roles in MEME_TEMPLATES) + ". There are about 200 more: "
                    "give a theme or a name instead of an id and the tool answers with the closest ones.",
     "parameters": {"type": "object", "properties": {
         "template": {"type": "string", "description": "Template id (the word before the parenthesis), or a "
                                                          "name or theme to search, e.g. \"distracted\"."},
         "lines": {"type": "array", "items": {"type": "string"},
-                  "description": "One caption per line of the template, in order, each under 12 words."},
+                  "description": "One caption per line of the template, in the order given above, 8 words max each."},
     }, "required": ["template", "lines"]},
 }}
 TOOLS = [WEB_SEARCH_TOOL, READ_PAGE_TOOL, GET_WEATHER_TOOL, GET_TIME_TOOL, CALCULATE_TOOL, PICK_RANDOM_TOOL]
@@ -512,8 +538,23 @@ async def _meme_templates_by_id(client: httpx.AsyncClient) -> dict[str, dict]:
     return known
 
 
+def meme_hint(t: dict) -> str:
+    """`id (name, N lines: what each line is for)`.
+
+    The roles come from our own table; for the other templates, from the template's
+    example captions, which show where each line goes."""
+    lines = int(t.get("lines") or 0)
+    plural = "" if lines == 1 else "s"
+    roles = MEME_ROLES.get(str(t.get("id")), "")
+    if not roles:
+        example = [str(e).strip()[:40] for e in (t.get("example") or {}).get("text") or []]
+        roles = " / ".join(e for e in example[: lines or len(example)] if e and e != "~")[:120]
+    tail = f", {lines} line{plural}" + (f": {roles}" if roles else "") + ")"
+    return f"{t.get('id')} ({t.get('name')}{tail}"
+
+
 def closest_memes(query: str, known: dict[str, dict]) -> list[str]:
-    """Templates whose id, name or keywords share words with `query`, best first, as "id (name, N lines)"."""
+    """Templates whose id, name or keywords share words with `query`, best first."""
     words = set(re.findall(r"[a-z0-9]+", query.lower()))
     scored = []
     for t in known.values():
@@ -523,27 +564,54 @@ def closest_memes(query: str, known: dict[str, dict]) -> list[str]:
         if score:
             scored.append((-score, t["id"], t))
     scored.sort(key=lambda x: x[:2])
-    return [f"{t['id']} ({t.get('name')}, {t.get('lines')} lines)" for _, _, t in scored[:MEME_SUGGESTIONS]]
+    return [meme_hint(t) for _, _, t in scored[:MEME_SUGGESTIONS]]
+
+
+def named_template(asked: str, known: dict[str, dict]) -> str | None:
+    """The template whose own name the request spells out ("distracted boyfriend" → db),
+    so naming one costs one call instead of a suggestion round trip."""
+    words = set(re.findall(r"[a-z0-9]+", asked.lower()))
+    for tid, t in known.items():
+        name = [w for w in re.findall(r"[a-z0-9]+", str(t.get("name") or "").lower()) if len(w) > 1]
+        if name and all(w in words for w in name):
+            return tid
+    return None
 
 
 async def make_meme(template: str, lines, client: httpx.AsyncClient | None = None) -> tuple[bytes | None, str]:
-    """(PNG bytes, message for the model). memegen escapes the captions itself when they are posted as JSON."""
+    """(PNG bytes, message for the model). memegen escapes the captions itself when they are posted as JSON.
+
+    The captions are checked against the template (how many lines, how long) before
+    anything is generated: memegen would accept a wrong number and drop the extra
+    lines, which is how a meme ends up meaning nothing."""
     template = template.strip().lower()
     asked = template
     template = re.sub(r"\s+", "-", template) if re.fullmatch(r"[a-z0-9 -]{1,40}", template) else template
-    captions = [str(l).strip()[:MEME_LINE_CHARS] for l in lines] if isinstance(lines, list) else []
+    captions = [str(l).strip() for l in lines] if isinstance(lines, list) else []
     if not re.fullmatch(r"[a-z0-9-]{1,40}", template):
         return None, "Unknown template: use one id from the list."
     if not any(captions):
         return None, "Captions are required: one per line of the template."
+    long_lines = [str(i + 1) for i, c in enumerate(captions) if len(c) > MEME_LINE_CHARS]
+    if long_lines:
+        return None, (f"Caption {', '.join(long_lines)} is too long ({MEME_LINE_CHARS} characters max, 8 words is "
+                      "better): memegen shrinks the text until it is unreadable. Shorten it and call make_meme again.")
     own = client is None
     client = client or httpx.AsyncClient(timeout=HTTP_TIMEOUT, headers={"User-Agent": USER_AGENT})
     try:
         known = await _meme_templates_by_id(client)
         if known and template not in known:
+            template = named_template(asked, known) or template
+        if known and template not in known:
             near = closest_memes(asked, known)
             return None, ("Unknown template. Closest: " + ", ".join(near) + ". Call again with one of these ids."
                           if near else "Unknown template: no close match, pick an id from the list.")
+        wanted = int(known.get(template, {}).get("lines") or 0)
+        if wanted and len(captions) != wanted:
+            roles = MEME_ROLES.get(template)
+            return None, (f"{template} takes exactly {wanted} line{'s' if wanted > 1 else ''}"
+                          + (f", {roles}." if roles else ". ") + " Call make_meme again with that many captions, "
+                          "the extra ones are dropped.")
         r = await client.post(MEME_URL, json={"template_id": template, "text_lines": captions, "extension": "png"})
         if r.status_code in (404, 422):
             return None, "Unknown template: use one id from the list."
@@ -562,4 +630,5 @@ async def make_meme(template: str, lines, client: httpx.AsyncClient | None = Non
             await client.aclose()
     if not raw.startswith(b"\x89PNG") or len(raw) > MEME_MAX_BYTES:
         return None, "The meme could not be made. Answer with words."
-    return raw, "Meme made, it will be sent with your reply. Now reply with a few words at most, or nothing."
+    return raw, (f"Meme made ({template}, {len(captions)} line{'s' if len(captions) > 1 else ''}) and it will be sent "
+                 "with your reply. Now reply with a few words at most, or nothing.")

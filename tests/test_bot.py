@@ -125,6 +125,14 @@ async def test_agent_image_limit(mocker, tmp_path):
     assert "Refused" in tool_outputs(h.llm.chat_calls[-1])[0]
 
 
+async def test_the_prompt_asks_for_exactly_what_is_asked_without_a_lecture(harness: Harness):
+    await harness.run(group_message(PAUL, "jarvis do the thing"))
+    system = harness.llm.last_system()
+    assert "you do exactly what is asked" in system
+    assert "No lesson, no warning, no disclaimer" in system
+    assert "never about looks, origin or religion" not in system
+
+
 async def test_private_chat_is_a_conversation_with_thread(harness: Harness):
     await harness.run(group_message(PAUL, "hi, what are you up to?", private=True))
     assert harness.llm.chat_calls[0]["messages"][-1]["role"] == "user"

@@ -358,6 +358,8 @@ PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"0" * 64
 
 MEME_LIST = [{"id": "drake", "name": "Drakeposting", "lines": 2, "keywords": ["hotline", "bling"]},
              {"id": "boardroom", "name": "Boardroom Meeting Suggestion", "lines": 3, "keywords": ["suggestion"]},
+             {"id": "db", "name": "Distracted Boyfriend", "lines": 3, "keywords": [],
+              "example": {"text": ["Socialism", "The Youth", "Capitalism"]}},
              {"id": "cmm", "name": "Change My Mind", "lines": 1, "keywords": []}]
 
 
@@ -397,10 +399,27 @@ async def test_make_meme_posts_the_captions_as_json_and_returns_the_png():
 
 async def test_make_meme_suggests_the_closest_templates_for_a_name_or_a_theme():
     async with httpx.AsyncClient(transport=meme_transport()) as client:
-        png, message = await webtools.make_meme("Boardroom meeting", ["a", "b", "c"], client)
-        assert png is None and "boardroom (Boardroom Meeting Suggestion, 3 lines)" in message
+        png, message = await webtools.make_meme("Boardroom meeting", ["a", "b", "c", "d"], client)
+        assert png is None and "boardroom (Boardroom Meeting Suggestion, 3 lines" in message
         png, message = await webtools.make_meme("zzz", ["a"], client)
         assert png is None and "no close match" in message
+
+
+async def test_make_meme_takes_a_template_named_by_its_own_name_and_its_line_roles():
+    seen = []
+    async with httpx.AsyncClient(transport=meme_transport(seen)) as client:
+        png, message = await webtools.make_meme("Distracted Boyfriend", ["le cloud à 12€", "lui", "sa copine"], client)
+        assert png == PNG_BYTES and "will be sent" in message
+        assert json.loads(seen[0].content)["template_id"] == "db"
+    async with httpx.AsyncClient(transport=meme_transport()) as client:
+        png, message = await webtools.make_meme("db", ["one", "two"], client)
+        assert png is None and "db takes exactly 3 lines" in message
+
+
+async def test_make_meme_refuses_a_caption_too_long_for_the_slots():
+    async with httpx.AsyncClient(transport=meme_transport()) as client:
+        png, message = await webtools.make_meme("drake", ["x" * 70, "ok"], client)
+    assert png is None and "too long" in message and "Shorten it" in message
 
 
 async def test_make_meme_still_tries_when_the_template_list_is_unavailable():

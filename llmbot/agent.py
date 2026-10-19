@@ -162,8 +162,8 @@ class Agent:
         can: list[str] = [
             '- summarize the conversation (a period, the last N messages, "since yesterday"): the latest messages '
             "are provided below, call get_history if you need more or older ones;",
-            "- answer a question, explain, give an opinion, analyze an exchange, roast someone (biting "
-            "joke between friends, never about looks, origin or religion), argue a debate pro/con, "
+            "- answer a question, explain, give an opinion, analyze an exchange, roast someone (in the tone "
+            "the group uses between friends, no apology and no lecture), argue a debate pro/con, "
             "speak in a character's voice;",
         ]
         if s.images_enabled:
@@ -201,16 +201,17 @@ class Agent:
             can.append("- send_gif to react with an animated GIF when it says it better than words (rarely, "
                        "never for a serious subject; a single one per reply);")
         if s.memes_enabled:
-            can.append("- make_meme to answer with a meme (a classic template, captions in the group's language, "
-                       "about what is happening in the chat); one per reply, when someone asks for one or the "
-                       "joke is obvious;")
+            can.append("- make_meme to answer with a meme: a classic template, as many caption lines as the "
+                       "template takes, in the language of the conversation, about exactly what was asked "
+                       "(the chat itself only when that is the subject), 8 words max per line; one per reply, "
+                       "when someone asks for one or the joke lands better as a meme;")
         can.append(("- get_spend for the cost. " if s.tool_enabled("get_spend") else "- ") +
                    "Your model, only the owner changes it: if asked to change it, say it is not your call.")
         rules = Agent._tool_rules(s)
         return (
             f"You are {s.bot_name}, a participant{where} on Signal. People address you by calling your name, "
             "by mentioning you, by replying to one of your messages or in private. You understand the request in "
-            "natural language and act, without asking for confirmation when it is clear.\n"
+            "natural language and you do exactly what is asked, without asking for confirmation when it is clear.\n"
             + prompts.PERSONALITY + "\n"
             "What you can do:\n"
             + "\n".join(can) + "\n\n"

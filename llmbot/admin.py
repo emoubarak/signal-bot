@@ -45,7 +45,7 @@ CATALOG_TTL = 1800
 TOOL_INFO = {
     "generate_image": ("Créer des images", "Dessine ou retouche une image à la demande. Payant, à l'image, via OpenRouter.", "Images"),
     "send_gif": ("Envoyer un GIF", "Réagit avec un GIF animé trouvé sur Klipy. Gratuit.", "Images"),
-    "make_meme": ("Faire un meme", "Répond avec un meme (Drake, Distracted Boyfriend…) légendé sur ce qui se passe dans le groupe, avec memegen.link. Gratuit.", "Images"),
+    "make_meme": ("Faire un meme", "Répond avec un meme (Drake, Distracted Boyfriend…) légendé sur le sujet demandé, avec memegen.link. Gratuit.", "Images"),
     "web_search": ("Chercher sur internet", "Trouve une info récente (score, prix, actualité) avec DuckDuckGo. Gratuit.", "Internet"),
     "read_page": ("Lire un lien", "Lit une page web collée dans le groupe pour la résumer. Gratuit.", "Internet"),
     "get_weather": ("Météo", "Météo du jour et des trois prochains jours pour une ville, avec Open-Meteo. Gratuit.", "Internet"),
