@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from signalbot import ReadyHandler, SendMessage
@@ -27,7 +27,8 @@ def parse_when(at, in_minutes, tz: ZoneInfo, now: datetime) -> tuple[int | None,
     """(due timestamp in ms, "") or (None, what to tell the model)."""
     try:
         if in_minutes not in (None, ""):
-            due = now + timedelta(minutes=float(in_minutes))
+            # in UTC: on the local wall clock, "in 60 min" across the autumn change lasted 120 min
+            due = (now.astimezone(timezone.utc) + timedelta(minutes=float(in_minutes))).astimezone(tz)
         elif at:
             due = datetime.fromisoformat(str(at).strip().replace(" ", "T"))
             due = due.replace(tzinfo=tz) if due.tzinfo is None else due.astimezone(tz)
@@ -35,6 +36,9 @@ def parse_when(at, in_minutes, tz: ZoneInfo, now: datetime) -> tuple[int | None,
             return None, "Give the time as `at` (YYYY-MM-DD HH:MM, the group's time) or as `in_minutes`."
     except (ValueError, OverflowError):
         return None, "Could not read that time. Use `at` as YYYY-MM-DD HH:MM, or `in_minutes` as a number."
+    # compared in UTC: two datetimes of the same zone compare by wall clock, and the two 02:30 of
+    # the autumn night would be taken for the same time
+    due, now = due.astimezone(timezone.utc), now.astimezone(timezone.utc)
     if due <= now:
         return None, "That time is already past. Work it out again from the current date and time."
     if due > now + timedelta(days=MAX_DAYS):

@@ -85,7 +85,7 @@ The model must support tool calls, which is what the bot drives its history, ima
 | `CHAT_MODEL` | `deepseek/deepseek-v4.1-flash` | Chat model: an OpenRouter slug, or a name the local server serves (a llama-swap selector works). `OPENROUTER_MODEL` is still read as the older name |
 | `IMAGE_MODEL` | `meta/muse-image` | Image model, from the OpenRouter Image API. Empty = image generation off |
 | `TRANSCRIBE_MODEL` | `google/gemini-3.1-flash-lite` | Audio-input model for voice notes. Empty = transcription off |
-| `ALLOWED_GROUPS` | all | Group names or ids the bot listens to, comma-separated |
+| `ALLOWED_GROUPS` | all | Group ids (or names) the bot listens to, comma-separated. Prefer the id (`group.…`, from `GET /v1/groups/<number>`): a name is resolved once at startup, so after a rename the bot would ignore the group from its next restart |
 | `ALLOWED_NUMBERS` | all | Numbers allowed to write to it in private |
 | `OWNER_NUMBER` | none | Your number: the only one who can `/clear`, and who gets a private message on every restart saying which model it came back on |
 | `ANNOUNCE_STARTUP` | `true` | Announce every restart in private to `OWNER_NUMBER` |

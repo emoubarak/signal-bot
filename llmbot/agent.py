@@ -458,8 +458,16 @@ class Agent:
                     args = json.loads(fn.get("arguments") or "{}")
                 except json.JSONDecodeError:
                     args = {}
+                if not isinstance(args, dict):  # a small model may send a list or a bare value
+                    args = {}
                 logger.info("tool %s %s", fn.get("name"), json.dumps(args, ensure_ascii=False)[:200])
-                output = await self._run_tool(str(fn.get("name")), args, req, images, result)
+                try:
+                    output = await self._run_tool(str(fn.get("name")), args, req, images, result)
+                except (ValueError, TypeError, KeyError) as e:
+                    # int("all"), float("24h")…: the model gets the error and can call again
+                    logger.warning("tool %s failed on its arguments: %s", fn.get("name"), e)
+                    output = f"Invalid arguments ({type(e).__name__}: {e}). Check the parameter types and call again."
+
                 messages.append({"role": "tool", "tool_call_id": call.get("id"), "content": output})
         else:
             # ran out of rounds while still calling tools: ask for the final answer without tools
@@ -480,6 +488,8 @@ class Agent:
             if chat & said and not (about & said):
                 logger.info("text off the meme subject, dropped: %s", result.text[:80])
                 result.text = ""
+        if not result.text.strip() and not result.images:
+            logger.warning("the model returned an empty answer")
         if result.text.strip() == SILENCE or (not result.text.strip() and not result.images):
             result.silent = not result.images
             result.text = ""

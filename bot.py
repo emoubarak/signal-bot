@@ -84,7 +84,7 @@ def main() -> None:
         "signal_service": settings.signal_service,
         "phone_number": settings.phone_number,
         "storage": {"type": "in-memory"},
-        "logging_level": logging.INFO,
+        "logging_level": logging.WARNING,  # INFO writes every received message, text and numbers, to the journal
     })
     logging.getLogger("signalbot").propagate = False  # signalbot installs its own handler
     handler = LLMHandler(settings, store, llm, registry)

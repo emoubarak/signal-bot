@@ -94,7 +94,10 @@ class OpenRouter:
             headers["Authorization"] = f"Bearer {api_key}"
         if not local:
             headers["HTTP-Referer"] = "https://github.com/emoubarak/signal-bot"
-        self._client = client or httpx.AsyncClient(base_url=base_url, timeout=self._timeout, headers=headers)
+        # a local server can take minutes to swap a model in: the HTTP timeout must not cut the
+        # request before LOCAL_CHAT_DEADLINE does (it did at 180 s, as an empty "network error")
+        timeout = max(self._timeout, LOCAL_CHAT_DEADLINE + 30) if local else self._timeout
+        self._client = client or httpx.AsyncClient(base_url=base_url, timeout=timeout, headers=headers)
         # Images and voice notes are OpenRouter-only: a second client, only built
         # when chat is local and the key is set.
         self._openrouter: httpx.AsyncClient | None = None
@@ -140,8 +143,10 @@ class OpenRouter:
             resp = await asyncio.wait_for(client.post(path, json=payload), deadline)
         except TimeoutError as e:
             raise OpenRouterError(f"no answer after {deadline:.0f} s", "timeout") from e
+        except httpx.TimeoutException as e:
+            raise OpenRouterError(f"no answer after {deadline:.0f} s", "timeout") from e
         except httpx.HTTPError as e:
-            raise OpenRouterError(f"network error: {e}") from e
+            raise OpenRouterError(f"network error: {e or type(e).__name__}") from e
         if resp.status_code >= 400:
             detail = resp.text[:300]
             try:

@@ -55,7 +55,7 @@ class LLMHandler(DataMessageHandler):
     def _compile_names(self) -> re.Pattern:
         names = [self.settings.bot_name, *self.settings.bot_aliases]
         return re.compile(
-            r"(?<![\w@])(" + "|".join(re.escape(_fold(n)) for n in names if n.strip()) + r")(?![\w@])", re.I)
+            r"(?<!\w)(" + "|".join(re.escape(_fold(n)) for n in names if n.strip()) + r")(?![\w@])", re.I)
 
     def refresh(self) -> None:
         """Take in what the admin page changed that was derived once at startup: the names
@@ -177,6 +177,10 @@ class LLMHandler(DataMessageHandler):
         # Our own replies are stored when sent; a sync echo must not overwrite them.
         existing = self.store.get(chat_id, msg.timestamp)
         if existing is not None and existing.is_bot:
+            return None
+        # Already recorded from this author: Signal delivered it again. Not transcribed,
+        # described or answered a second time.
+        if existing is not None and existing.author_id == author_id:
             return None
 
         text = (msg.text or "").strip()

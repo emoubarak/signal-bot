@@ -417,6 +417,21 @@ class _Handler(BaseHTTPRequestHandler):
     def _authed(self) -> bool:
         return self.admin.valid_session(self._session())
 
+    def _behind_proxy(self) -> bool:
+        """Proxied by a server on this machine (`tailscale serve`): only then are its
+        X-Forwarded-* headers believed, a remote client could write anything there."""
+        return self.client_address[0] in ("127.0.0.1", "::1")
+
+    def _client_ip(self) -> str:
+        """Who is signing in, for the lockout. Behind `tailscale serve` every request comes
+        from 127.0.0.1: the visitor's tailnet address is the last X-Forwarded-For entry, so
+        one person's wrong passwords no longer lock everyone out."""
+        forwarded = self.headers.get("X-Forwarded-For", "") if self._behind_proxy() else ""
+        return forwarded.split(",")[-1].strip() or self.client_address[0]
+
+    def _https(self) -> bool:
+        return self._behind_proxy() and self.headers.get("X-Forwarded-Proto", "") == "https"
+
     def _same_site(self) -> bool:
         """Changes only come from the page itself: a custom header a foreign site cannot add."""
         return self.headers.get("X-Admin") == "1"
@@ -462,7 +477,7 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json(403, {"error": "Requête refusée."})
                 return
             if path == "/api/login" and method == "POST":
-                ip = self.client_address[0]
+                ip = self._client_ip()
                 try:
                     sid = self.admin.login(str(body.get("token") or ""), ip)
                 except PermissionError as e:
@@ -472,6 +487,8 @@ class _Handler(BaseHTTPRequestHandler):
                     self._json(401, {"error": "Mot de passe incorrect."})
                     return
                 cookie = f"{COOKIE}={sid}; Path=/; HttpOnly; SameSite=Strict; Max-Age={SESSION_SECONDS}"
+                if self._https():
+                    cookie += "; Secure"
                 self._json(200, {"ok": True}, {"Set-Cookie": cookie})
                 return
             if not self._authed():
