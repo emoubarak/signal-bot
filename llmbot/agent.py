@@ -27,6 +27,45 @@ SILENCE = "[nothing]"
 IMAGE_UNAVAILABLE = "Refused: image creation is disabled on this bot (empty IMAGE_MODEL in .env)."
 ASPECT_RATIOS = {"1:1", "1:2", "2:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9", "9:21", "auto"}
 MAX_ROUNDS = 5
+# Said in the chat when the model's last word is still a tool call written as text.
+NO_FINAL_ANSWER = "I got lost in my tools on that one, ask me again."
+# A tool call the model wrote as text instead of a real call: Qwen's XML form
+# (<tool_call><function=name><parameter=k>v</parameter></function></tool_call>) or JSON in <tool_call>.
+_TOOL_MARKUP = re.compile(r"<tool_call>.*?(?:</tool_call>|\Z)|<function=[^>]*>.*?(?:</function>|\Z)", re.S)
+_XML_CALL = re.compile(r"<function=([\w.-]+)>(.*?)(?:</function>|\Z)", re.S)
+_XML_PARAM = re.compile(r"<parameter=([\w.-]+)>\s*(.*?)\s*</parameter>", re.S)
+
+
+def strip_tool_markup(text: str) -> str:
+    """The text without any tool call written in it, so markup never reaches the chat."""
+    return _TOOL_MARKUP.sub("", text or "").strip()
+
+
+def tool_calls_in_text(text: str) -> list[dict]:
+    """Tool calls the model wrote as text, in the OpenAI shape, so they still run when the
+    server did not recognise them. Parameter values are read as JSON when they are JSON
+    (numbers, lists), as plain text otherwise."""
+    calls = []
+    for i, block in enumerate(re.findall(r"<tool_call>(.*?)(?:</tool_call>|\Z)", text or "", re.S)):
+        name, args = None, {}
+        m = _XML_CALL.search(block)
+        if m:
+            name = m.group(1)
+            for key, value in _XML_PARAM.findall(m.group(2)):
+                try:
+                    args[key] = json.loads(value)
+                except ValueError:
+                    args[key] = value
+        else:
+            try:
+                data = json.loads(block.strip())
+                name, args = data.get("name"), data.get("arguments") or {}
+            except (ValueError, AttributeError):
+                continue
+        if name:
+            calls.append({"id": f"text_call_{i}", "type": "function",
+                          "function": {"name": str(name), "arguments": json.dumps(args, ensure_ascii=False)}})
+    return calls
 MAX_TOOL_HISTORY = 300
 
 GET_HISTORY_TOOL = {"type": "function", "function": {
@@ -121,6 +160,7 @@ class AgentResult:
     text: str
     images: list[tuple[bytes, str]] = field(default_factory=list)
     memes: int = 0
+    recycle_refusals: int = 0  # make_meme captions refused for recycling the bot's own jokes
     meme_subject: str = ""
     image_costs: list[tuple[str, float]] = field(default_factory=list)  # (model, cost)
     chat_cost: float = 0.0
@@ -368,8 +408,14 @@ class Agent:
             # not KIND_BOT, so the author is what tells them apart)
             own_text = "\n".join(m.text for m in (*req.window, *req.thread[:-1])
                                  if m.text and (m.is_bot or m.author_id == self.settings.phone_number)) if req else ""
+            # once only: a meme about a person draws on what was said about them, which the bot's
+            # replies also mention; refused every time, it spent all its tool rounds (2026-11-06)
+            if result.recycle_refusals:
+                own_text = ""
             png, message = await webtools.make_meme(template, args.get("lines"), subject=subject,
                                                     request_text=request_text, own_text=own_text)
+            if png is None and message.startswith("These words come from your own"):
+                result.recycle_refusals += 1
             if png is not None:
                 result.images.append((png, "image/png"))
                 result.memes += 1
@@ -448,6 +494,14 @@ class Agent:
                                         max_tokens=self.settings.max_output_tokens, tools=tools)
             result.chat_cost += reply.cost
             result.chat_model = reply.model
+            if not reply.tool_calls and "<tool_call>" in (reply.text or ""):
+                # written as text, not recognised by the server: run it anyway
+                reply.tool_calls = tool_calls_in_text(reply.text)
+                if reply.tool_calls:
+                    logger.warning("tool call written as text, parsed: %s",
+                                   ", ".join(c["function"]["name"] for c in reply.tool_calls))
+                    reply.message = {"role": "assistant", "content": strip_tool_markup(reply.text) or None,
+                                     "tool_calls": reply.tool_calls}
             if not reply.tool_calls:
                 result.text = reply.text + (" […]" if reply.truncated else "")
                 break
@@ -472,12 +526,19 @@ class Agent:
 
                 messages.append({"role": "tool", "tool_call_id": call.get("id"), "content": output})
         else:
-            # ran out of rounds while still calling tools: ask for the final answer without tools
+            # ran out of rounds while still calling tools: ask for the final answer without tools.
+            # Without being told, the model writes one more tool call as text, and the server,
+            # given no tools, lets it through as the answer.
+            messages.append({"role": "user", "content": "No tool calls are left. Answer now, in plain text, "
+                             "with what you already have."})
             reply = await self.llm.chat(model=chat_model, messages=messages, temperature=0.7,
                                         max_tokens=self.settings.max_output_tokens)
             result.chat_cost += reply.cost
             result.text = reply.text
 
+        if "<tool_call>" in result.text or "<function=" in result.text:
+            logger.warning("tool call markup in the final answer, removed: %s", result.text[:120])
+            result.text = strip_tool_markup(result.text) or ("" if result.images else NO_FINAL_ANSWER)
         # the model sometimes copies the "[HH:MM] Name : " header of the transcript it was shown
         result.text = re.sub(rf"^\s*(\[\d{{1,2}}:\d{{2}}\]\s*)?{re.escape(self.settings.bot_name)}\s*:\s*", "",
                              result.text, flags=re.IGNORECASE) if result.text.lstrip().startswith("[") else result.text
