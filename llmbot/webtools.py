@@ -285,8 +285,14 @@ class _PublicOnly(httpcore.AsyncNetworkBackend):
         addresses = [i[4][0] for i in infos]
         if not addresses or not all(ipaddress.ip_address(a).is_global for a in addresses):
             raise NotPublic(f"{host} is not a public address")
-        return await self._inner.connect_tcp(addresses[0], port, timeout=timeout, local_address=local_address,
-                                             socket_options=socket_options)
+        error: Exception | None = None
+        for address in dict.fromkeys(addresses):  # IPv6 first, then IPv4: a dead AAAA must not fail the page
+            try:
+                return await self._inner.connect_tcp(address, port, timeout=timeout, local_address=local_address,
+                                                     socket_options=socket_options)
+            except (httpcore.ConnectError, httpcore.ConnectTimeout) as e:
+                error = e
+        raise error
 
     async def sleep(self, seconds: float) -> None:
         await self._inner.sleep(seconds)

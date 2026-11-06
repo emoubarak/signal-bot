@@ -464,6 +464,8 @@ class Agent:
                 try:
                     output = await self._run_tool(str(fn.get("name")), args, req, images, result)
                 except (ValueError, TypeError, KeyError) as e:
+                    if fn.get("name") == "generate_image":  # paid: an error after the call must not invite a retry
+                        raise
                     # int("all"), float("24h")…: the model gets the error and can call again
                     logger.warning("tool %s failed on its arguments: %s", fn.get("name"), e)
                     output = f"Invalid arguments ({type(e).__name__}: {e}). Check the parameter types and call again."

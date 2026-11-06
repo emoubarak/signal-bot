@@ -34,6 +34,7 @@ USAGE_DESCRIBE = "describe"
 _CLEAR_RE = re.compile(r"^[/!]clear\s*[!?.]*$")
 # Images of one message (an album) described on arrival, at most.
 MAX_DESCRIBED = 4
+DESCRIBE_BUDGET = 60  # seconds for all the descriptions of one message
 
 
 class LLMHandler(DataMessageHandler):
@@ -201,11 +202,21 @@ class LLMHandler(DataMessageHandler):
         elif images:
             kind = KIND_IMAGE
             if self.settings.describe_images and await self._can_describe():
-                # an album is several images in one message: each one gets its sentence
-                for img in images[:MAX_DESCRIBED]:
-                    description = await self._describe_image(c, Path(img["path"]), img["content_type"])
-                    if description:
-                        text = f"{text} [image: {description}]" if text else f"[image: {description}]"
+                # an album is several images in one message: each one gets its sentence, within
+                # DESCRIBE_BUDGET in all, since recording holds the chat's lock
+                caption, descriptions = text, []
+
+                async def describe_all() -> None:
+                    for img in images[:MAX_DESCRIBED]:
+                        d = await self._describe_image(c, Path(img["path"]), img["content_type"], caption)
+                        if d:
+                            descriptions.append(d)
+                try:
+                    await asyncio.wait_for(describe_all(), DESCRIBE_BUDGET)
+                except TimeoutError:
+                    logger.warning("image descriptions stopped after %d s", DESCRIBE_BUDGET)
+                for d in descriptions:
+                    text = f"{text} [image: {d}]" if text else f"[image: {d}]"
         else:
             kind = KIND_TEXT
             if not text and attachments:
@@ -256,18 +267,23 @@ class LLMHandler(DataMessageHandler):
         logger.info("image not described: %s is not loaded on the local server", self.chat_model)
         return False
 
-    async def _describe_image(self, c: DataMessageContext, path: Path, content_type: str) -> str | None:
+    async def _describe_image(self, c: DataMessageContext, path: Path, content_type: str,
+                              caption: str = "") -> str | None:
         try:
             data, media_type = image_for_model(path.read_bytes(), content_type)  # HEIC, GIF, huge photos
+            prompt = prompts.DESCRIBE_IMAGE + (f"\nIt was posted with this text: {caption[:500]}" if caption else "")
             result = await self.llm.chat(
                 model=self.chat_model,
                 messages=[{"role": "user", "content": [
-                    {"type": "text", "text": prompts.DESCRIBE_IMAGE},
+                    {"type": "text", "text": prompt},
                     {"type": "image_url", "image_url": {"url": data_url(data, media_type)}},
                 ]}],
                 temperature=0.2, max_tokens=160, retry_on_truncation=False,
             )
             self._usage(c, USAGE_DESCRIBE, result.model, result.cost)
+            if result.truncated:  # half a sentence would mislead summaries and search
+                logger.warning("image description cut by the token limit, dropped")
+                return None
             return (result.text or "").strip() or None
         except Exception:
             logger.exception("image description failed")

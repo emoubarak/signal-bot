@@ -98,3 +98,46 @@ async def test_late_clear_from_the_owner_still_applies(mocker, tmp_path):
     await h.run(group_message(PAUL, "/clear", server_ts=late))
     assert h.store.context_start(CHAT_ID) is not None
     assert any("starting fresh" in t for t in h.sent_texts())
+
+
+async def test_cut_description_is_dropped_and_caption_is_given(mocker, tmp_path):
+    from llmbot.openrouter import ChatResult
+    h, llm = _local(mocker, tmp_path, loaded=True)
+    seen = []
+
+    async def cut(**kw):
+        seen.append(kw["messages"][0]["content"][0]["text"])
+        return ChatResult(text="A man next to a red car with a sign that says", finish_reason="length",
+                          model="m", cost=0, truncated=True)
+    h.llm.chat = cut
+    await h.run(group_message(PAUL, "rate my face", attachments=[image_attachment()]))
+    assert "[image:" not in h.store.recent(CHAT_ID, 1)[0].text
+    assert "rate my face" in seen[0]
+
+
+async def test_public_only_tries_the_next_address_when_one_is_dead(mocker):
+    import asyncio
+    import socket
+
+    import httpcore
+
+    from llmbot.webtools import _PublicOnly
+
+    loop = asyncio.get_running_loop()
+
+    async def two(host, port, *a, **k):
+        return [(socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2606:2800:21f:cb07:6820:80da:af6b:8b2c", port, 0, 0)),
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.215.14", port))]
+
+    mocker.patch.object(loop, "getaddrinfo", side_effect=two)
+    tried = []
+
+    class Inner(httpcore.AsyncNetworkBackend):
+        async def connect_tcp(self, host, port, **kw):
+            tried.append(host)
+            if ":" in host:
+                raise httpcore.ConnectError("dead v6")
+            return "stream"
+
+    assert await _PublicOnly(Inner()).connect_tcp("example.com", 443) == "stream"
+    assert tried == ["2606:2800:21f:cb07:6820:80da:af6b:8b2c", "93.184.215.14"]
