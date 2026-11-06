@@ -34,6 +34,16 @@ from llmbot.store import Store
 logger = logging.getLogger("llmbot.admin")
 
 PAGE = Path(__file__).parent / "static" / "admin.html"
+# What makes the page installable as an app (PWA): public like the page itself, no secret inside.
+APP_FILES = {
+    "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
+    "/sw.js": ("sw.js", "text/javascript; charset=utf-8"),
+    "/icon-192.png": ("icon-192.png", "image/png"),
+    "/icon-512.png": ("icon-512.png", "image/png"),
+    "/icon-maskable-512.png": ("icon-maskable-512.png", "image/png"),
+    "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
+    "/favicon.ico": ("icon-192.png", "image/png"),
+}
 COOKIE = "signalbot_admin"
 SESSION_SECONDS = 7 * 86400
 MAX_BODY = 64_000
@@ -444,6 +454,10 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if path == "/healthz":
             self._json(200, {"ok": True})
+            return
+        if path in APP_FILES:
+            name, ctype = APP_FILES[path]
+            self._send(200, (PAGE.parent / name).read_bytes(), ctype)
             return
         if not self._authed():
             self._json(401, {"error": "Connexion requise."})

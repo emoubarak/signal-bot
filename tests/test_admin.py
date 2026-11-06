@@ -381,3 +381,17 @@ def test_tool_rules_are_in_the_prompt_only_for_tools_that_are_on(admin):
     assert "call get_history" in prompt and "call read_page" in prompt
     client(admin).put("/api/config", json={"changes": {"web_tools": False, "disabled_tools": []}})
     assert "call read_page" not in agent._system(req) and "call get_history" in agent._system(req)
+
+
+def test_app_files_make_the_page_installable(admin):
+    c = client(admin, login=False)
+    m = c.get("/manifest.webmanifest")
+    assert m.status_code == 200 and m.headers["content-type"].startswith("application/manifest+json")
+    data = m.json()
+    assert data["display"] == "standalone" and data["start_url"] == "/"
+    for icon in data["icons"]:
+        r = c.get(icon["src"])
+        assert r.status_code == 200 and r.content.startswith(b"\x89PNG")
+    assert c.get("/sw.js").status_code == 200
+    page = c.get("/").text
+    assert 'rel="manifest"' in page and 'serviceWorker' in page

@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Réglages du bot</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#0a84ff">
 <style>
 :root{color-scheme:light;
 --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;
@@ -185,6 +189,8 @@ section.page.on{display:grid}
 <div class="toast" id="toast" aria-live="polite"></div>
 <script>
 "use strict";
+// installable as an app (Brave/Chrome: "Installer"); the worker caches nothing
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 /* ---------- petits outils ---------- */
 const $ = (s, el = document) => el.querySelector(s);
 function h(tag, props, ...kids) {
