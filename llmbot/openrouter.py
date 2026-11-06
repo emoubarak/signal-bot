@@ -163,6 +163,25 @@ class OpenRouter:
 
     # ── chat ────────────────────────────────────────────────────────────────
 
+    async def model_loaded(self, model: str) -> bool:
+        """Whether a local server already holds `model` in memory, so a background call
+        (an image description) never makes llama-swap swap out another model. True for
+        OpenRouter, and for a local server that does not say what it runs (no llama-swap
+        `/running`): then nothing would be swapped anyway. A llama-swap selector
+        (`qwen3.8-flash-next-ablit`) counts as loaded when one of its targets is: one name
+        starts the other (`qwen3.8-flash-next`, `qwen3.6-35b-ablit-rtx`)."""
+        if not self.local:
+            return True
+        root = str(self._client.base_url).rstrip("/").removesuffix("/v1")
+        try:
+            r = await self._client.get(root + "/running", timeout=5)
+            if r.status_code != 200:
+                return True
+            running = [m.get("model", "") for m in r.json().get("running", []) if m.get("state") == "ready"]
+        except (httpx.HTTPError, ValueError, AttributeError):
+            return True
+        return any(name and (model.startswith(name) or name.startswith(model)) for name in running)
+
     async def chat(
         self,
         *,

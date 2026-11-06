@@ -18,7 +18,7 @@ from llmbot import prompts, syncflag
 from llmbot.agent import Agent, AgentRequest
 from llmbot.personas import Registry
 from llmbot.config import Settings
-from llmbot.media import audio_for_model, is_audio, is_image, save_attachment
+from llmbot.media import audio_for_model, image_for_model, is_audio, is_image, save_attachment
 from llmbot.openrouter import OpenRouter, OpenRouterError, data_url
 from llmbot.store import KIND_BOT, KIND_IMAGE, KIND_TEXT, KIND_VOICE, Store, StoredMessage
 from llmbot.syncflag import is_sync
@@ -32,6 +32,8 @@ USAGE_DESCRIBE = "describe"
 
 # `/clear`, `/clear!`, `!clear` …: the command alone, never inside a word (`/clearance`).
 _CLEAR_RE = re.compile(r"^[/!]clear\s*[!?.]*$")
+# Images of one message (an album) described on arrival, at most.
+MAX_DESCRIBED = 4
 
 
 class LLMHandler(DataMessageHandler):
@@ -75,9 +77,15 @@ class LLMHandler(DataMessageHandler):
             self._handle_edit(c)
             return
 
+        late = self._late(c)
         async with self._locks[self._chat_id(c)]:
             rec = await self._record(c)
         if rec is None:
+            return
+        if late:
+            # Delivered after the bot was off: kept for summaries and search, never answered,
+            # so a question from hours ago does not get a reply out of nowhere.
+            logger.info("[%s] late by %d min: stored, not answered", rec.chat_id[:12], late // 60_000)
             return
         if self._is_clear_command(c, rec):
             task = asyncio.create_task(self._clear_context(c, rec))
@@ -88,6 +96,17 @@ class LLMHandler(DataMessageHandler):
             task = asyncio.create_task(self._converse(c, rec))
             self._tasks.add(task)
             task.add_done_callback(self._task_done)
+
+    def _late(self, c: DataMessageContext) -> int:
+        """How late (ms) a message reaches the bot after Signal's server got it, when that is
+        past LATE_REPLY_MINUTES; 0 otherwise. Measured from the server's receipt time, not the
+        sender's clock, so a phone set to the wrong time is never taken for a late message."""
+        limit = self.settings.late_reply_minutes
+        received = getattr(c.message, "server_received_timestamp", None)
+        if limit <= 0 or not received:
+            return 0
+        delay = int(time.time() * 1000) - int(received)
+        return delay if delay > limit * 60_000 else 0
 
     # ── /clear ──────────────────────────────────────────────────────────────
 
@@ -177,10 +196,12 @@ class LLMHandler(DataMessageHandler):
             text = f"{transcript} - {text}" if text else transcript
         elif images:
             kind = KIND_IMAGE
-            if self.settings.describe_images:
-                description = await self._describe_image(c, Path(images[0]["path"]), images[0]["content_type"])
-                if description:
-                    text = f"{text} [image: {description}]" if text else f"[image: {description}]"
+            if self.settings.describe_images and await self._can_describe():
+                # an album is several images in one message: each one gets its sentence
+                for img in images[:MAX_DESCRIBED]:
+                    description = await self._describe_image(c, Path(img["path"]), img["content_type"])
+                    if description:
+                        text = f"{text} [image: {description}]" if text else f"[image: {description}]"
         else:
             kind = KIND_TEXT
             if not text and attachments:
@@ -221,20 +242,29 @@ class LLMHandler(DataMessageHandler):
             logger.exception("transcription failed")
             return f"[voice note not transcribed: {type(e).__name__}]"
 
+    async def _can_describe(self) -> bool:
+        """Describing runs on the chat model: OpenRouter needs its key; a local server must
+        already hold the model, so a photo nobody asked about never swaps another model out."""
+        if not self.settings.local_chat:
+            return bool(self.settings.openrouter_api_key)
+        if await self.llm.model_loaded(self.chat_model):
+            return True
+        logger.info("image not described: %s is not loaded on the local server", self.chat_model)
+        return False
+
     async def _describe_image(self, c: DataMessageContext, path: Path, content_type: str) -> str | None:
-        if not self.settings.openrouter_api_key:
-            return None
         try:
+            data, media_type = image_for_model(path.read_bytes(), content_type)  # HEIC, GIF, huge photos
             result = await self.llm.chat(
                 model=self.chat_model,
                 messages=[{"role": "user", "content": [
                     {"type": "text", "text": prompts.DESCRIBE_IMAGE},
-                    {"type": "image_url", "image_url": {"url": data_url(path.read_bytes(), content_type)}},
+                    {"type": "image_url", "image_url": {"url": data_url(data, media_type)}},
                 ]}],
-                temperature=0.2, max_tokens=120,
+                temperature=0.2, max_tokens=160, retry_on_truncation=False,
             )
             self._usage(c, USAGE_DESCRIBE, result.model, result.cost)
-            return result.text
+            return (result.text or "").strip() or None
         except Exception:
             logger.exception("image description failed")
             return None

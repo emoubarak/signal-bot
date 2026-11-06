@@ -7,8 +7,14 @@ Wants=network-online.target
 
 [Container]
 ContainerName=signal-rest
-Image=docker.io/bbernhard/signal-cli-rest-api:latest
+# Build CI officielle du 2026-10-22 (signal-cli 0.14.9) : la 0.101 n'a pas encore le mode `manual` ci-dessous.
+# Revenir à une version publiée (0.102 ou plus) dès qu'elle sort.
+Image=docker.io/bbernhard/signal-cli-rest-api:1792710189-ci
 Environment=MODE=json-rpc
+# `manual` : signal-cli ne va chercher les messages chez Signal que pendant que le bot écoute. Bot arrêté
+# (déploiement, redémarrage), ils attendent sur les serveurs de Signal et arrivent quand il revient. En mode par
+# défaut (`on-start`), un message reçu sans le bot connecté est acquitté puis jeté.
+Environment=JSON_RPC_RECEIVE_MODE=manual
 # Le port n'est publié que sur la boucle locale : lier un appareil se fait depuis la page d'administration du bot.
 PublishPort=127.0.0.1:8086:8080
 # Les données du compte lié (clés Signal) : à sauvegarder, à ne jamais perdre.

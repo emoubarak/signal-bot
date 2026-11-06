@@ -55,6 +55,10 @@ class Settings:
     # Ask the chat model for a one-line description of every incoming image
     # so summaries know what was shared. Costs a vision call per image.
     describe_images: bool = False
+    # A message that reaches the bot this many minutes after Signal's server got it (the bot was
+    # off: deploy, restart) is stored and searchable, but not answered: a question from hours ago
+    # gets no surprise reply. 0 = answer whatever the delay.
+    late_reply_minutes: int = 10
     attachment_retention_days: int = 30
 
     # Free tools without any account: web search, reading a link, weather, time, calculator.
@@ -132,6 +136,7 @@ class Settings:
             context_messages=int(e.get("CONTEXT_MESSAGES") or cls.context_messages),
             max_output_tokens=int(e.get("MAX_OUTPUT_TOKENS") or cls.max_output_tokens),
             describe_images=_bool(e.get("DESCRIBE_IMAGES"), cls.describe_images),
+            late_reply_minutes=int(e.get("LATE_REPLY_MINUTES") or cls.late_reply_minutes),
             web_tools=_bool(e.get("WEB_TOOLS"), cls.web_tools),
             klipy_api_key=(e.get("KLIPY_API_KEY") or "").strip(),
             disabled_tools=_list(e.get("DISABLED_TOOLS")),

@@ -77,8 +77,8 @@ def main() -> None:
         log.info("image generation is off (IMAGE_MODEL empty)")
     if not settings.transcription_enabled:
         log.info("voice note transcription is off (TRANSCRIBE_MODEL empty)")
-    if settings.describe_images and not settings.openrouter_api_key:
-        log.warning("DESCRIBE_IMAGES needs OpenRouter (OPENROUTER_API_KEY unset): image descriptions will fail")
+    if settings.describe_images and not settings.local_chat and not settings.openrouter_api_key:
+        log.warning("DESCRIBE_IMAGES needs a chat model: OPENROUTER_API_KEY or LOCAL_BASE_URL")
 
     bot = SignalBot({
         "signal_service": settings.signal_service,

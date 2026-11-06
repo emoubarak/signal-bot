@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -93,9 +94,12 @@ class FakeLLM:
 
 
 def group_message(user, text, *, quote: dict | None = None, attachments: list[dict] | None = None,
-                  mentions: list[dict] | None = None, ts: int | None = None, private: bool = False) -> Envelope:
+                  mentions: list[dict] | None = None, ts: int | None = None, private: bool = False,
+                  server_ts: int | None = None) -> Envelope:
+    """`server_ts`: when Signal's server got it (default now; the bot judges lateness on it)."""
     number, uid, name = user
     ts = ts or _new_timestamp()
+    server_ts = server_ts or now_ms()
     data = {"timestamp": ts, "message": text, "expiresInSeconds": 0, "viewOnce": False,
             "mentions": mentions or [], "attachments": attachments or []}
     if not private:
@@ -104,8 +108,13 @@ def group_message(user, text, *, quote: dict | None = None, attachments: list[di
         data["quote"] = quote
     env = {"account": BOT_NUMBER, "envelope": {
         "source": number, "sourceNumber": number, "sourceUuid": uid, "sourceName": name, "sourceDevice": 1,
-        "timestamp": ts, "serverReceivedTimestamp": ts, "serverDeliveredTimestamp": ts, "dataMessage": data}}
+        "timestamp": ts, "serverReceivedTimestamp": server_ts, "serverDeliveredTimestamp": now_ms(),
+        "dataMessage": data}}
     return Envelope(json.dumps(env))
+
+
+def now_ms() -> int:
+    return int(time.time() * 1000)
 
 
 def sync_message(text: str, *, to_user=None, ts: int | None = None) -> Envelope:
@@ -120,7 +129,7 @@ def sync_message(text: str, *, to_user=None, ts: int | None = None) -> Envelope:
         sent["groupInfo"] = {"groupId": GROUP_INTERNAL, "type": "DELIVER", "revision": 1}
     env = {"account": BOT_NUMBER, "envelope": {
         "source": BOT_NUMBER, "sourceNumber": BOT_NUMBER, "sourceUuid": str(uuid.uuid4()), "sourceName": "Bot",
-        "sourceDevice": 1, "timestamp": ts, "serverReceivedTimestamp": ts, "serverDeliveredTimestamp": ts,
+        "sourceDevice": 1, "timestamp": ts, "serverReceivedTimestamp": now_ms(), "serverDeliveredTimestamp": now_ms(),
         "syncMessage": {"sentMessage": sent}}}
     return Envelope(json.dumps(env))
 
@@ -157,10 +166,10 @@ def image_attachment() -> dict:
 class Harness:
     def __init__(self, mocker, tmp_path: Path, **settings_overrides) -> None:
         self.llm = FakeLLM()
-        self.settings = Settings(
-            signal_service=ChatTestCase.signal_service, phone_number=BOT_NUMBER, openrouter_api_key="x",
-            bot_name="Jarvis", data_dir=tmp_path, **settings_overrides,
-        )
+        self.settings = Settings(**{
+            "signal_service": ChatTestCase.signal_service, "phone_number": BOT_NUMBER, "openrouter_api_key": "x",
+            "bot_name": "Jarvis", "data_dir": tmp_path, **settings_overrides,
+        })
         self.store = Store(":memory:")
         self.handler = LLMHandler(self.settings, self.store, self.llm, Registry.load(None))
         self.bot = SignalBot(ChatTestCase.config)
