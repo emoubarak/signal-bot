@@ -82,15 +82,15 @@ class LLMHandler(DataMessageHandler):
             rec = await self._record(c)
         if rec is None:
             return
+        if self._is_clear_command(c, rec):  # even late: the owner's /clear still applies, from its own time
+            task = asyncio.create_task(self._clear_context(c, rec))
+            self._tasks.add(task)
+            task.add_done_callback(self._task_done)
+            return
         if late:
             # Delivered after the bot was off: kept for summaries and search, never answered,
             # so a question from hours ago does not get a reply out of nowhere.
             logger.info("[%s] late by %d min: stored, not answered", rec.chat_id[:12], late // 60_000)
-            return
-        if self._is_clear_command(c, rec):
-            task = asyncio.create_task(self._clear_context(c, rec))
-            self._tasks.add(task)
-            task.add_done_callback(self._task_done)
             return
         if self._addressed_to_bot(c, rec):
             task = asyncio.create_task(self._converse(c, rec))

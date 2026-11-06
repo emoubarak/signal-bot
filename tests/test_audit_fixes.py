@@ -68,3 +68,22 @@ def test_cookie_is_secure_only_over_https(admin):  # noqa: F811
     https = httpx.post(admin.base + "/api/login", json={"token": TOKEN},
                        headers={"X-Admin": "1", "X-Forwarded-Proto": "https"})
     assert "Secure" in https.headers["set-cookie"]
+
+
+async def test_read_page_rebinding_to_localhost_is_refused(mocker):
+    """The check sees a public address, the connection would get 127.0.0.1: refused, nothing fetched."""
+    import asyncio
+    import socket
+
+    from llmbot import webtools
+
+    answers = iter(["93.184.215.14", "127.0.0.1", "127.0.0.1"])
+    loop = asyncio.get_running_loop()
+
+    async def rebinding(host, port, *a, **k):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (next(answers), port or 0))]
+
+    mocker.patch.object(loop, "getaddrinfo", side_effect=rebinding)
+    connect = mocker.patch("httpcore._backends.auto.AutoBackend.connect_tcp")
+    out = await webtools.read_page("http://rebind.example:8086/v1/contacts/x")
+    assert out.startswith("Refused") and not connect.called

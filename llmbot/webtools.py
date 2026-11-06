@@ -18,6 +18,7 @@ from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 from zoneinfo import ZoneInfo, available_timezones
 
+import httpcore
 import httpx
 
 logger = logging.getLogger("llmbot.webtools")
@@ -263,10 +264,45 @@ async def _public_host(host: str) -> bool:
     return bool(infos) and all(ipaddress.ip_address(i[4][0]).is_global for i in infos)
 
 
+class NotPublic(httpx.ConnectError):
+    """The address the connection would go to is not on the public internet."""
+
+
+class _PublicOnly(httpcore.AsyncNetworkBackend):
+    """Resolves the host itself, refuses unless every address is public, and connects to
+    the address it checked. Checking first and letting httpx resolve again would leave a
+    gap: a domain can answer a public address to the check, then 127.0.0.1 to the
+    connection (DNS rebinding), and reach signal-cli or another local service."""
+
+    def __init__(self, inner: httpcore.AsyncNetworkBackend) -> None:
+        self._inner = inner
+
+    async def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
+        try:
+            infos = await asyncio.get_running_loop().getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        except OSError as e:
+            raise httpcore.ConnectError(str(e)) from e
+        addresses = [i[4][0] for i in infos]
+        if not addresses or not all(ipaddress.ip_address(a).is_global for a in addresses):
+            raise NotPublic(f"{host} is not a public address")
+        return await self._inner.connect_tcp(addresses[0], port, timeout=timeout, local_address=local_address,
+                                             socket_options=socket_options)
+
+    async def sleep(self, seconds: float) -> None:
+        await self._inner.sleep(seconds)
+
+
+def public_client() -> httpx.AsyncClient:
+    """An HTTP client that can only connect to public addresses (TLS still checks the name)."""
+    transport = httpx.AsyncHTTPTransport()
+    transport._pool._network_backend = _PublicOnly(transport._pool._network_backend)
+    return httpx.AsyncClient(timeout=HTTP_TIMEOUT, headers={"User-Agent": USER_AGENT}, transport=transport)
+
+
 async def read_page(url: str, client: httpx.AsyncClient | None = None) -> str:
     url = url.strip()
     own = client is None
-    client = client or httpx.AsyncClient(timeout=HTTP_TIMEOUT, headers={"User-Agent": USER_AGENT})
+    client = client or public_client()
     try:
         for _ in range(PAGE_REDIRECTS + 1):
             u = urlparse(url)
@@ -296,7 +332,11 @@ async def read_page(url: str, client: httpx.AsyncClient | None = None) -> str:
                 return "The page has no readable text (it may need JavaScript)."
             return text[:PAGE_CHARS] + (" […]" if len(text) > PAGE_CHARS else "")
         return "Too many redirects."
+    except NotPublic:
+        return "Refused: this address is not a public website."
     except httpx.HTTPError as e:
+        if isinstance(e.__cause__, NotPublic) or "not a public address" in str(e):
+            return "Refused: this address is not a public website."
         return f"Could not load the page ({type(e).__name__})."
     finally:
         if own:

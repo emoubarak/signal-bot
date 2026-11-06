@@ -88,3 +88,13 @@ async def test_model_loaded_reads_llama_swap_running(mocker):
     down = httpx.AsyncClient(base_url="http://127.0.0.1:8089/v1",
                              transport=httpx.MockTransport(lambda r: httpx.Response(404)))
     assert await OpenRouter("", base_url="http://127.0.0.1:8089/v1", local=True, client=down).model_loaded("x")
+
+
+async def test_late_clear_from_the_owner_still_applies(mocker, tmp_path):
+    from tests.conftest import PAUL
+    h = Harness(mocker, tmp_path, owner_number=PAUL[0])
+    await h.run(group_message(LEA, "old talk"))
+    late = now_ms() - 3_600_000
+    await h.run(group_message(PAUL, "/clear", server_ts=late))
+    assert h.store.context_start(CHAT_ID) is not None
+    assert any("starting fresh" in t for t in h.sent_texts())
