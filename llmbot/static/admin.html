@@ -191,6 +191,17 @@ section.page.on{display:grid}
 "use strict";
 // installable as an app (Brave/Chrome: "Installer"); the worker caches nothing
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+// "Installer l'appli": shown only while the browser offers to install (not yet installed, HTTPS)
+let installPrompt = null;
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; try { render(); } catch (err) { /* page pas encore prête : le bouton apparaîtra au prochain affichage */ } });
+window.addEventListener("appinstalled", () => { installPrompt = null; try { render(); } catch (err) { /* page pas encore prête : le bouton apparaîtra au prochain affichage */ } });
+async function installApp() {
+  if (!installPrompt) return;
+  const p = installPrompt;
+  await p.prompt();
+  const { outcome } = await p.userChoice;
+  if (outcome === "accepted") { installPrompt = null; render(); }
+}
 /* ---------- petits outils ---------- */
 const $ = (s, el = document) => el.querySelector(s);
 function h(tag, props, ...kids) {
@@ -599,7 +610,9 @@ function render() {
     h("div", { class: "row", style: "flex-wrap:nowrap" }, h("button", { class: "btn", onclick: () => { resetDraft(); render(); } }, "Annuler"), h("button", { class: "btn pri", onclick: save }, "Enregistrer"))));
   root.replaceChildren(h("div", { class: "app" },
     h("aside", { class: "side" }, h("div", { class: "brand" }, h("b", null, "✦"), "Réglages du bot"), h("nav", { "aria-label": "Sections" }, nav),
-      h("div", { class: "foot" }, h("button", { class: "btn sm ghost", onclick: toggleTheme, "aria-label": "Changer de thème clair ou sombre" }, "Clair / sombre"))),
+      h("div", { class: "foot" },
+        installPrompt ? h("button", { class: "btn sm", id: "install", onclick: installApp }, "Installer l'appli") : null,
+        h("button", { class: "btn sm ghost", onclick: toggleTheme, "aria-label": "Changer de thème clair ou sombre" }, "Clair / sombre"))),
     h("main", null, h("div", { class: "head" }, h("div", null, h("h1", null, cur[1]), h("p", null, cur[2]),
       page !== "overview" ? h("p", { class: "help", style: "margin-top:2px" }, "Sauf mention contraire, un changement s'applique dès l'enregistrement.") : null)),
       h("section", { class: "page on" }, cur[3]())), bar));
