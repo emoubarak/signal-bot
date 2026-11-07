@@ -41,6 +41,42 @@ def strip_tool_markup(text: str) -> str:
     return _TOOL_MARKUP.sub("", text or "").strip()
 
 
+# 2026-11-06, local Qwen at Q2: one answer was the asker's line copied with its "[06:38] Name: " header,
+# the next one the model's reasoning written as the answer ("I need to… The user is saying… Let me draft").
+# Replayed on the 103 bot answers stored then: these two were the only ones flagged.
+_LINE_HEADER = re.compile(r"^\s*\[(?:[A-Z][a-z]{2} |\d{2}/\d{2} )?\d{1,2}:\d{2}\]\s*([^:\n]{1,60}?)\s*:")
+_REASONING = re.compile(
+    r"\bthe user(?:'s)?\b|\blet me (?:draft|write|think|look|check|craft|answer|respond|reply)\b"
+    r"|\b(?:draft|final answer|my reply|my response)\s*:"
+    r"|^(?:okay|ok|alright|hmm)[,.]?\s+(?:so\s+)?(?:i|the|let|we)\b", re.I | re.M)
+_PLANNING_OPENER = re.compile(r"^\s*(?:i need to|i should|i'll|i will|i must|we need to|let me|let's see)\b", re.I)
+# Said to the model, never posted, when its answer is rejected; it gets one more try.
+RETRY_NOTE = ("(Not posted: your last output {why}. Write only the message to post in the chat, in the language "
+              "of the conversation: no reasoning, no notes about the request, no copy of a message.)")
+_WHY = {"echo": "copied a message of the conversation instead of answering it",
+        "reasoning": "was your reasoning about how to answer, not the answer"}
+
+
+def _norm(text: str) -> str:
+    return re.sub(r"\W+", " ", text.lower()).strip()
+
+
+def answer_problem(text: str, bot_name: str, recent: list[str]) -> str | None:
+    """Why an answer must not be posted: "echo" (a line of the transcript copied back, header or not),
+    "reasoning" (the model thinking aloud), or None when it is a reply."""
+    if not text.strip():
+        return None
+    header = _LINE_HEADER.match(text)
+    if header and header.group(1).strip().lower() != bot_name.lower():
+        return "echo"
+    body = _norm(_LINE_HEADER.sub("", text, count=1))
+    if len(body) >= 20 and any(body == _norm(r) for r in recent):
+        return "echo"
+    if _REASONING.search(text) or (_PLANNING_OPENER.match(text) and "\n\n" in text.strip()):
+        return "reasoning"
+    return None
+
+
 def tool_calls_in_text(text: str) -> list[dict]:
     """Tool calls the model wrote as text, in the OpenAI shape, so they still run when the
     server did not recognise them. Parameter values are read as JSON when they are JSON
@@ -488,6 +524,8 @@ class Agent:
         messages = self._build_messages(req, images)
         result = AgentResult(text="", chat_model=chat_model)
         tools = tools_for(self.settings)
+        recent = [m.text for m in (req.window + req.thread)[-8:] if not m.is_bot and m.text.strip()]
+        retried = False
 
         for _ in range(MAX_ROUNDS):
             reply = await self.llm.chat(model=chat_model, messages=messages, temperature=0.7,
@@ -503,6 +541,13 @@ class Agent:
                     reply.message = {"role": "assistant", "content": strip_tool_markup(reply.text) or None,
                                      "tool_calls": reply.tool_calls}
             if not reply.tool_calls:
+                problem = None if retried else answer_problem(reply.text, self.settings.bot_name, recent)
+                if problem:
+                    # the bad output is not kept in the conversation: the model would copy it again
+                    retried = True
+                    logger.warning("answer rejected (%s), asking again: %s", problem, reply.text[:120])
+                    messages.append({"role": "user", "content": RETRY_NOTE.format(why=_WHY[problem])})
+                    continue
                 result.text = reply.text + (" […]" if reply.truncated else "")
                 break
             messages.append(reply.message)
@@ -542,6 +587,10 @@ class Agent:
         # the model sometimes copies the "[HH:MM] Name : " header of the transcript it was shown
         result.text = re.sub(rf"^\s*(\[\d{{1,2}}:\d{{2}}\]\s*)?{re.escape(self.settings.bot_name)}\s*:\s*", "",
                              result.text, flags=re.IGNORECASE) if result.text.lstrip().startswith("[") else result.text
+        problem = answer_problem(result.text, self.settings.bot_name, recent)
+        if problem:  # still wrong after the second try: silence rather than the transcript or the reasoning
+            logger.warning("answer rejected again (%s), not posted: %s", problem, result.text[:120])
+            result.text = ""
         # after a meme, a text that only recycles the conversation (no word of the subject) is the
         # running joke leaking in again: the meme goes out alone rather than with an off-subject line
         if result.memes and result.text.strip() and result.meme_subject:
