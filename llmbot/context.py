@@ -22,9 +22,13 @@ def fmt_time(ts_ms: int, tz: ZoneInfo, now: datetime | None = None) -> str:
     return dt.strftime("%d/%m %H:%M")
 
 
-def format_message(m: StoredMessage, tz: ZoneInfo, reply_name: NameResolver | None = None) -> str:
+def format_message(m: StoredMessage, tz: ZoneInfo, reply_name: NameResolver | None = None,
+                   with_time: bool = True) -> str:
+    """One transcript line. Without the time for the lines the model reads as the live conversation:
+    it once continued that "[06:38] Name: " format instead of answering (2026-11-06)."""
     prefix = {KIND_VOICE: "🎤 ", KIND_IMAGE: "🖼️ "}.get(m.kind, "")
     text = m.text.strip() or ("[image with no caption]" if m.kind == KIND_IMAGE else "")
     replied = reply_name(m) if (reply_name and m.reply_to_ts) else None
     who = m.author_name + (f" (replying to {replied})" if replied else "")
-    return f"[{fmt_time(m.ts, tz)}] {who}: {prefix}{text}"
+    line = f"{who}: {prefix}{text}"
+    return f"[{fmt_time(m.ts, tz)}] {line}" if with_time else line

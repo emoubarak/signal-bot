@@ -30,11 +30,13 @@ async def test_names_recorded_and_reply_targets_quoted_message(harness: Harness)
     assert sent[0].quote_author == LEA[1]  # the reply quotes the request
 
 
-async def test_bot_answers_are_part_of_the_context(harness: Harness):
+async def test_own_earlier_replies_are_left_out_of_the_context(harness: Harness):
+    # 2026-11-07: they were 74 % of the words shown, and the model copied their length and jokes
     await harness.run(group_message(PAUL, "where are we eating tonight?"), group_message(LEA, "jarvis any idea?"))
     await harness.run(group_message(PAUL, "jarvis are you coming?"))
     system = harness.llm.last_system()
-    assert "Lea: jarvis any idea?" in system and "Jarvis (replying to Lea): model reply" in system
+    assert "Lea: jarvis any idea?" in system and "model reply" not in system
+    assert "your own earlier replies are not shown" in system
 
 
 async def test_calling_the_bot_by_name_runs_the_agent_with_history_tool(harness: Harness):

@@ -53,7 +53,8 @@ class FakeLLM:
     image_gate: asyncio.Event | None = None
 
     async def chat(self, *, model, messages, temperature=0.7, max_tokens=1000, tools=None, retry_on_truncation=True):
-        self.chat_calls.append({"model": model, "messages": messages, "temperature": temperature, "tools": tools})
+        self.chat_calls.append({"model": model, "messages": messages, "temperature": temperature, "tools": tools,
+                                "max_tokens": max_tokens})
         if self.script:
             step = self.script.pop(0)
             if isinstance(step, dict):

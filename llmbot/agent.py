@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 from llmbot import prompts, reminders, webtools
 from llmbot.personas import Registry
 from llmbot.config import Settings
-from llmbot.context import format_message
+from llmbot.context import fmt_time, format_message
 from llmbot.media import image_for_model, image_for_signal
 from llmbot.openrouter import OpenRouter, OpenRouterError, data_url
 from llmbot.store import Store, StoredMessage
@@ -55,26 +55,114 @@ RETRY_NOTE = ("(Not posted: your last output {why}. Write only the message to po
               "of the conversation: no reasoning, no notes about the request, no copy of a message.)")
 _WHY = {"echo": "copied a message of the conversation instead of answering it",
         "reasoning": "was your reasoning about how to answer, not the answer"}
+# Said to the model, never posted, when its answer is far above the word budget: it rewrites it shorter.
+SHORTEN_NOTE = ("(Not posted: {words} words, the limit is {budget}. Rewrite it in at most {budget} words, same "
+                "language and tone, keep the best of it. Only the new message, nothing else.)")
+# The live conversation shown to the model: since the last pause this long, at most this many lines.
+GAP_MS = 2 * 3600 * 1000
+WINDOW_LINES = 12
+SHOWN_GAP_MS = 30 * 60 * 1000   # a pause this long inside the window is written as "(40 min later)"
+THREAD_TURNS = 7                # the end of the reply chain with the bot: at most 3 of its own replies
 
 
 def _norm(text: str) -> str:
     return re.sub(r"\W+", " ", text.lower()).strip()
 
 
-def answer_problem(text: str, bot_name: str, recent: list[str]) -> str | None:
+def answer_problem(text: str, bot_name: str, recent: list[str], names: tuple[str, ...] = ()) -> str | None:
     """Why an answer must not be posted: "echo" (a line of the transcript copied back, header or not),
-    "reasoning" (the model thinking aloud), or None when it is a reply."""
+    "reasoning" (the model thinking aloud), or None when it is a reply. `names`: the people of the
+    conversation, whose "Name:" in front of a copied message is still an echo."""
     if not text.strip():
         return None
     header = _LINE_HEADER.match(text)
     if header and header.group(1).strip().lower() != bot_name.lower():
         return "echo"
-    body = _norm(_LINE_HEADER.sub("", text, count=1))
-    if len(body) >= 20 and any(body == _norm(r) for r in recent):
+    # "Name: …" alone is a legit answer too (a profile of each person): an echo only when what follows is a
+    # message of the conversation copied back (2026-11-07, a profiling answer was silenced by the plain rule)
+    body = _LINE_HEADER.sub("", text, count=1).strip()
+    for n in names:
+        if n and n.lower() != bot_name.lower() and body.lower().startswith(n.lower() + ":"):
+            body = body[len(n) + 1:]
+            break
+    body = _norm(body)
+    if len(body) >= 20 and any(r and (body == _norm(r) or body.startswith(_norm(r)) and len(_norm(r)) >= 20)
+                               for r in recent):
         return "echo"
     if _REASONING.search(text) or (_PLANNING_OPENER.match(text) and "\n\n" in text.strip()):
         return "reasoning"
     return None
+
+
+# Reply length, decided in code (2026-11-07). Measured on the group: a person's turn is 9 words (median, p90 28),
+# the bot's replies were 75 (p90 209) although the prompt said "same length as the others". Research agrees that
+# vague length instructions do not hold and that models cannot count their own words: the budget is a number
+# given with the request, counted afterwards, with one shorter rewrite when it is clearly exceeded.
+BUDGETS = {"short": 30, "medium": 60, "long": 150}
+# max_tokens per class: a safety net above the budget, wide enough for a tool call (a meme's captions)
+TOKEN_CAPS = {"short": 300, "medium": 450, "long": 900}
+OVER = 1.5   # words above budget × OVER: the model is asked once for a shorter version
+CUT = 2.0    # still above budget × CUT after that: cut after the last whole sentence that fits
+_LONG_ASK = re.compile(
+    r"\br[ée]sum|\br[ée]cap|\bsummar|\bexpliqu|\bexplain|\blistes?\b|\blist\b|\bprofiling\b|\bprofils? de\b"
+    r"|d[ée]taill|\banalys|\bcompar|\bconseils\b|\badvice\b|\brecettes?\b|\brecipes?\b|\b[ée]tapes\b|\bsteps\b"
+    r"|\btuto(?:s|riel)?\b|\btradui|\btranslat", re.I)
+_MEDIUM_ASK = re.compile(
+    r"\broast|\bclash|\bblagues?\b|\bjokes?\b|\bimite|\bimitate|\bparle[rsz]?\b.{0,15}\bcomme\b|\btalk like"
+    r"|\bpo[èe]mes?\b|\bpoems?\b|\bchansons?\b|\bsongs?\b|\bhistoire\b|\bstory\b|\bavis\b|\bopinion"
+    r"|\bt.?en penses|\bpenses?[- ]tu\b|\btu penses\b|\btu crois\b|\bcrois[- ]tu\b|\bpourquoi\b|\bwhy\b"
+    r"|\bcomment\b|\bhow\b|\bc.?est quoi\b|\bwhat is\b|\bc.?est qui\b|\bwho is\b|\bd[ée]bat|\bdebate"
+    r"|\bargumente|\bd[ée]fends?\b|\bvs\b|\bou (?:bien|plut)|\bjeux? de mots?\b|\bpuns?\b|\bid[ée]es\b"
+    r"|\bideas\b|\bsurnoms\b|\bnicknames\b|\bpunchlines?\b", re.I)
+_SENTENCE_END = re.compile(r"[.!?…](?=\s|$)|\n")
+# tools whose answer is a summary or a read: the reply may be long; a web lookup: at least medium
+_LONG_TOOLS = {"get_history", "search_messages", "read_page"}
+
+
+def length_class(text: str, *, with_image: bool = False) -> str:
+    """How long the reply to `text` may be: short by default, long for a summary, an explanation, a list;
+    medium for a roast, a joke, a character's voice, an opinion, a question why or how. A link read with
+    read_page makes it long afterwards (class_after_tools), a link merely shared does not."""
+    if _LONG_ASK.search(text):
+        return "long"
+    if _MEDIUM_ASK.search(text) or with_image:
+        return "medium"
+    return "short"
+
+
+def class_after_tools(cls: str, used: set[str]) -> str:
+    if used & _LONG_TOOLS:
+        return "long"
+    if "web_search" in used and cls == "short":
+        return "medium"
+    return cls
+
+
+def word_count(text: str) -> int:
+    return len(text.split())
+
+
+def cut_to_words(text: str, limit: int, *, truncated: bool = False) -> str:
+    """`text` ended after its last whole sentence within `limit` words. A reply cut off by max_tokens is
+    brought back to its last whole sentence even when short. With no sentence end that fits: the words
+    that fit and "…"."""
+    if word_count(text) <= limit and not truncated:
+        return text
+    best = None
+    for m in _SENTENCE_END.finditer(text):
+        if word_count(text[:m.end()]) > limit:
+            break
+        if text[:m.end()].strip():
+            best = m.end()
+    if best is not None:
+        return text[:best].strip()
+    words = text.split()[:limit]
+    return " ".join(words).rstrip(" ,;:") + "…"
+
+
+def _pause(ms: int) -> str:
+    minutes = ms // 60000
+    return f"{minutes} min" if minutes < 60 else f"{minutes // 60} h" + (f" {minutes % 60:02d}" if minutes % 60 else "")
 
 
 def tool_calls_in_text(text: str) -> list[dict]:
@@ -323,8 +411,8 @@ class Agent:
             rules.append("- A link in the conversation to read or summarize: call read_page.")
         return rules
 
-    def _line(self, m: StoredMessage, images: dict[str, dict]) -> str:
-        line = format_message(m, self.tz, self._reply_name)
+    def _line(self, m: StoredMessage, images: dict[str, dict], with_time: bool = True) -> str:
+        line = format_message(m, self.tz, self._reply_name, with_time=with_time)
         ids = []
         for img in m.images():
             if Path(img["path"]).exists():
@@ -337,27 +425,62 @@ class Agent:
         t = self.store.get(m.chat_id, m.reply_to_ts) if m.reply_to_ts else None
         return t.author_name if t else None
 
-    def _build_messages(self, req: AgentRequest, images: dict[str, dict]) -> list[dict]:
+    def _own(self, m: StoredMessage) -> bool:
+        """A message the bot sent: text (KIND_BOT) or a meme, GIF or image (KIND_IMAGE, told by the author)."""
+        return m.is_bot or m.author_id == self.settings.phone_number
+
+    def _window(self, req: AgentRequest, thread: list[StoredMessage], quoted: StoredMessage | None,
+                floor: int | None) -> list[StoredMessage]:
+        """The people's messages since the last long pause, newest WINDOW_LINES. Not the bot's own earlier
+        replies: they were 74 % of the words shown (2026-11-07), so the model copied its own length and
+        running jokes instead of the group. Its replies in the current exchange are in `thread`."""
+        skip = {m.ts for m in thread} | ({quoted.ts} if quoted else set())
+        people = [m for m in req.window
+                  if not self._own(m) and m.ts not in skip and (floor is None or m.ts >= floor)]
+        kept: list[StoredMessage] = []
+        after = thread[0].ts if thread else None
+        for m in reversed(people):
+            if after is not None and after - m.ts > GAP_MS:
+                break
+            kept.append(m)
+            after = m.ts
+            if len(kept) >= WINDOW_LINES:
+                break
+        return kept[::-1]
+
+    def _build_messages(self, req: AgentRequest, images: dict[str, dict], budget: int | None = None) -> list[dict]:
         system = self._system(req)
         # After a /clear, nothing said before it may reach the model: drop it here too,
         # so a caller that hands over an older thread cannot undo the command.
         floor = req.context_start
-        window = [m for m in req.window if floor is None or m.ts >= floor]
         thread = [m for m in req.thread if floor is None or m.ts >= floor] or req.thread[-1:]
+        thread = thread[-THREAD_TURNS:]
+        while len(thread) > 1 and self._own(thread[0]):   # the exchange opens with a person, never with the bot
+            thread = thread[1:]
         quoted = req.quoted if floor is None or (req.quoted and req.quoted.ts >= floor) else None
+        window = self._window(req, thread, quoted, floor)
         if window:
-            system += "\n\n[CONVERSATION - recent messages]\n" + "\n".join(self._line(m, images) for m in window)
+            lines, prev = [], None
+            for m in window:
+                if prev is not None and m.ts - prev >= SHOWN_GAP_MS:
+                    lines.append(f"({_pause(m.ts - prev)} later)")
+                lines.append(self._line(m, images, with_time=False))
+                prev = m.ts
+            system += (f"\n\n[CONVERSATION - what people said lately, from {fmt_time(window[0].ts, self.tz)}; "
+                       "your own earlier replies are not shown]\n" + "\n".join(lines))
         messages: list[dict] = [{"role": "system", "content": system}]
 
         quoted_in_thread = quoted is not None and any(m.ts == quoted.ts for m in thread)
         for i, m in enumerate(thread):
-            if m.is_bot:
+            if self._own(m):
                 messages.append({"role": "assistant", "content": m.text})
                 continue
-            text = self._line(m, images)
+            text = self._line(m, images, with_time=False)
             is_last = i == len(thread) - 1
             if is_last and quoted is not None and not quoted_in_thread:
-                text = "[TARGET]\n" + self._line(quoted, images) + "\n\n" + text
+                text = "[TARGET]\n" + self._line(quoted, images, with_time=False) + "\n\n" + text
+            if is_last and budget:
+                text += f"\n\n(Your reply: at most {budget} words.)"
             content: list[dict] = [{"type": "text", "text": text}]
             for img in (m.images() + (quoted.images() if is_last and quoted and not quoted_in_thread else []))[-3:]:
                 path = Path(img["path"])
@@ -519,21 +642,49 @@ class Agent:
 
     # ── main loop ───────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _fit(reply, budget: int, draft: str) -> str:
+        """The final text within the budget: cut by max_tokens or still far too long, it ends after its last
+        whole sentence. A shorter rewrite that came back empty (only a tool call, dropped) falls back on the
+        long draft, cut."""
+        text = reply.text
+        if draft and not strip_tool_markup(text):
+            text = draft
+        words = word_count(strip_tool_markup(text))
+        if reply.truncated or words > budget * CUT:
+            cut = cut_to_words(text, int(budget * CUT), truncated=reply.truncated and text is reply.text)
+            logger.info("answer cut from %d to %d words", words, word_count(cut))
+            return cut
+        return text
+
     async def run(self, req: AgentRequest, *, chat_model: str) -> AgentResult:
         images: dict[str, dict] = {}
-        messages = self._build_messages(req, images)
+        asked = req.thread[-1] if req.thread else None
+        cls = length_class(asked.text if asked else "", with_image=bool(
+            (asked and asked.images()) or (req.quoted and req.quoted.images())))
+        messages = self._build_messages(req, images, budget=BUDGETS[cls])
         result = AgentResult(text="", chat_model=chat_model)
         tools = tools_for(self.settings)
-        recent = [m.text for m in (req.window + req.thread)[-8:] if not m.is_bot and m.text.strip()]
-        retried = False
+        offered: list[dict] | None = tools
+        recent = [m.text for m in (req.window + req.thread)[-8:] if not self._own(m) and m.text.strip()]
+        names = tuple({m.author_name for m in (*req.window, *req.thread) if not self._own(m)})
+        retried = False  # one more try per reply, whatever the reason: a local call takes seconds
+        used: set[str] = set()
+        announced = cls  # the class whose word count the model was given
+        draft = ""       # a too long answer sent back for a shorter version
 
-        for _ in range(MAX_ROUNDS):
+        for round_no in range(MAX_ROUNDS):
+            now_cls = class_after_tools(cls, used)
+            # no retry on the last round: the loop would end on it and its answer go out unchecked
+            can_retry = not retried and round_no < MAX_ROUNDS - 1
             reply = await self.llm.chat(model=chat_model, messages=messages, temperature=0.7,
-                                        max_tokens=self.settings.max_output_tokens, tools=tools)
+                                        max_tokens=min(self.settings.max_output_tokens, TOKEN_CAPS[now_cls]),
+                                        tools=offered)
             result.chat_cost += reply.cost
             result.chat_model = reply.model
-            if not reply.tool_calls and "<tool_call>" in (reply.text or ""):
-                # written as text, not recognised by the server: run it anyway
+            if offered is not None and not reply.tool_calls and "<tool_call>" in (reply.text or ""):
+                # written as text, not recognised by the server: run it anyway. Not when no tools were
+                # offered (a shorter rewrite): nothing may run twice, a paid image least of all
                 reply.tool_calls = tool_calls_in_text(reply.text)
                 if reply.tool_calls:
                     logger.warning("tool call written as text, parsed: %s",
@@ -541,14 +692,26 @@ class Agent:
                     reply.message = {"role": "assistant", "content": strip_tool_markup(reply.text) or None,
                                      "tool_calls": reply.tool_calls}
             if not reply.tool_calls:
-                problem = None if retried else answer_problem(reply.text, self.settings.bot_name, recent)
+                budget = BUDGETS[now_cls]
+                problem = answer_problem(reply.text, self.settings.bot_name, recent, names) if can_retry else None
                 if problem:
                     # the bad output is not kept in the conversation: the model would copy it again
                     retried = True
                     logger.warning("answer rejected (%s), asking again: %s", problem, reply.text[:120])
                     messages.append({"role": "user", "content": RETRY_NOTE.format(why=_WHY[problem])})
                     continue
-                result.text = reply.text + (" […]" if reply.truncated else "")
+                words = word_count(strip_tool_markup(reply.text))
+                if can_retry and words > budget * OVER:
+                    # kept, to be rewritten shorter; no tools on that call, so nothing runs twice
+                    retried = True
+                    offered = None
+                    draft = reply.text
+                    logger.info("answer of %d words for a budget of %d (%s), asking for a shorter one",
+                                words, budget, now_cls)
+                    messages.append({"role": "assistant", "content": reply.text})
+                    messages.append({"role": "user", "content": SHORTEN_NOTE.format(words=words, budget=budget)})
+                    continue
+                result.text = self._fit(reply, budget, draft)
                 break
             messages.append(reply.message)
             for call in reply.tool_calls:
@@ -560,6 +723,7 @@ class Agent:
                 if not isinstance(args, dict):  # a small model may send a list or a bare value
                     args = {}
                 logger.info("tool %s %s", fn.get("name"), json.dumps(args, ensure_ascii=False)[:200])
+                used.add(str(fn.get("name")))
                 try:
                     output = await self._run_tool(str(fn.get("name")), args, req, images, result)
                 except (ValueError, TypeError, KeyError) as e:
@@ -570,24 +734,33 @@ class Agent:
                     output = f"Invalid arguments ({type(e).__name__}: {e}). Check the parameter types and call again."
 
                 messages.append({"role": "tool", "tool_call_id": call.get("id"), "content": output})
+            # a summary or a lookup raised the allowed length: the model was told less, say so now
+            raised = class_after_tools(cls, used)
+            if raised != announced and messages[-1]["role"] == "tool":
+                announced = raised
+                messages[-1]["content"] += f"\n\n(Your reply: at most {BUDGETS[raised]} words.)"
         else:
             # ran out of rounds while still calling tools: ask for the final answer without tools.
             # Without being told, the model writes one more tool call as text, and the server,
             # given no tools, lets it through as the answer.
             messages.append({"role": "user", "content": "No tool calls are left. Answer now, in plain text, "
                              "with what you already have."})
+            now_cls = class_after_tools(cls, used)
             reply = await self.llm.chat(model=chat_model, messages=messages, temperature=0.7,
-                                        max_tokens=self.settings.max_output_tokens)
+                                        max_tokens=min(self.settings.max_output_tokens, TOKEN_CAPS[now_cls]))
             result.chat_cost += reply.cost
-            result.text = reply.text
+            result.text = self._fit(reply, BUDGETS[now_cls], draft)
 
+        # the prompt forbids the em dash and the model still writes one now and then
+        result.text = re.sub(r"^[ \t]*—[ \t]*", "- ", result.text, flags=re.M)
+        result.text = re.sub(r"[ \t]*—[ \t]*", ", ", result.text)
         if "<tool_call>" in result.text or "<function=" in result.text:
             logger.warning("tool call markup in the final answer, removed: %s", result.text[:120])
             result.text = strip_tool_markup(result.text) or ("" if result.images else NO_FINAL_ANSWER)
         # the model sometimes copies the "[HH:MM] Name : " header of the transcript it was shown
         result.text = re.sub(rf"^\s*(\[\d{{1,2}}:\d{{2}}\]\s*)?{re.escape(self.settings.bot_name)}\s*:\s*", "",
-                             result.text, flags=re.IGNORECASE) if result.text.lstrip().startswith("[") else result.text
-        problem = answer_problem(result.text, self.settings.bot_name, recent)
+                             result.text, flags=re.IGNORECASE)
+        problem = answer_problem(result.text, self.settings.bot_name, recent, names)
         if problem:  # still wrong after the second try: silence rather than the transcript or the reasoning
             logger.warning("answer rejected again (%s), not posted: %s", problem, result.text[:120])
             result.text = ""
