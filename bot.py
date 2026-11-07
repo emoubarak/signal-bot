@@ -70,13 +70,14 @@ def main() -> None:
     registry = Registry.load(ROOT / "prompts_custom.py")
     source = settings.chat_endpoint
     log.info("chat=%s (%s) image=%s transcribe=%s", settings.chat_model, source,
-             settings.image_model or "off", settings.transcribe_model or "off")
+             settings.image_model or "off",
+             " then ".join(x for x in (settings.transcribe_base_url, settings.transcribe_model) if x) or "off")
     if settings.local_chat:
         log.info("local chat endpoint: %s", settings.local_base_url)
     if not settings.images_enabled:
         log.info("image generation is off (IMAGE_MODEL empty)")
     if not settings.transcription_enabled:
-        log.info("voice note transcription is off (TRANSCRIBE_MODEL empty)")
+        log.info("voice note transcription is off (TRANSCRIBE_MODEL and TRANSCRIBE_BASE_URL empty)")
     if settings.describe_images and not settings.local_chat and not settings.openrouter_api_key:
         log.warning("DESCRIBE_IMAGES needs a chat model: OPENROUTER_API_KEY or LOCAL_BASE_URL")
 
