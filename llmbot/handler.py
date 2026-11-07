@@ -248,7 +248,7 @@ class LLMHandler(DataMessageHandler):
             try:
                 # the local server reads WAV, FLAC or MP3 only: Signal's AAC is converted
                 text = await self.llm.transcribe_local(base_url=s.transcribe_base_url, audio=await to_mp3(path.read_bytes()),
-                                                       audio_format="mp3", phrases=[s.bot_name, *s.bot_aliases])
+                                                       audio_format="mp3")
                 if text:
                     self._usage(c, USAGE_TRANSCRIBE, "local speech server", 0.0)
                     return text

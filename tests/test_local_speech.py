@@ -28,10 +28,10 @@ async def _voice(h: Harness) -> str:
     return stored.text
 
 
-async def test_local_server_first_with_the_bot_name_boosted(make):
+async def test_local_server_first(make):
     h = make()
     assert await _voice(h) == "bonjour mop ici une note vocale"
-    assert h.llm.local_stt_calls == [{"base_url": STT, "format": "mp3", "phrases": ["Jarvis"]}]
+    assert h.llm.local_stt_calls == [{"base_url": STT, "format": "mp3"}]
     assert h.llm.transcribe_calls == []
 
 

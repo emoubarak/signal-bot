@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import json
 import logging
 from dataclasses import dataclass, field
 
@@ -256,13 +255,13 @@ class OpenRouter:
             result.truncated = True
         return result
 
-    async def transcribe_local(self, *, base_url: str, audio: bytes, audio_format: str, phrases: list[str]) -> str:
-        """Voice note to text on a local OpenAI-compatible speech server (`/audio/transcriptions`, multipart).
-        `phrases` (the bot's names) are boosted so they come out spelled right. Language is detected."""
-        form = {"speech_contexts": json.dumps([{"phrases": phrases, "boost": 3}])} if phrases else {}
+    async def transcribe_local(self, *, base_url: str, audio: bytes, audio_format: str) -> str:
+        """Voice note to text on a local OpenAI-compatible speech server (`/audio/transcriptions`, multipart),
+        language detected by the server. No word boost for the bot's name: NeMo Parakeet ignores both
+        `prompt` and `speech_contexts` (no language model in its decoder, 2026-11-07)."""
         try:
             async with httpx.AsyncClient(timeout=LOCAL_STT_DEADLINE) as client:
-                resp = await client.post(f"{base_url}/audio/transcriptions", data=form,
+                resp = await client.post(f"{base_url}/audio/transcriptions",
                                          files={"file": (f"voice.{audio_format}", audio, f"audio/{audio_format}")})
         except httpx.HTTPError as e:
             raise OpenRouterError(f"speech server: {e or type(e).__name__}") from e

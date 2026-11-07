@@ -71,8 +71,8 @@ class FakeLLM:
     local_heard: object = "bonjour mop ici une note vocale"
     local_stt_calls: list[dict] = field(default_factory=list)
 
-    async def transcribe_local(self, *, base_url, audio, audio_format, phrases):
-        self.local_stt_calls.append({"base_url": base_url, "format": audio_format, "phrases": phrases})
+    async def transcribe_local(self, *, base_url, audio, audio_format):
+        self.local_stt_calls.append({"base_url": base_url, "format": audio_format})
         if isinstance(self.local_heard, Exception):
             raise self.local_heard
         return self.local_heard
