@@ -11,7 +11,7 @@ from llmbot.openrouter import OpenRouter
 
 REPLY = {"choices": [{"message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
          "model": "qwen3.8-flash-next-q2_0"}
-LOCAL_URL = "http://100.111.115.112:8089/v1"
+LOCAL_URL = "http://my-host.tailnet-name.ts.net:8089/v1"
 
 
 def local_client(handler) -> httpx.AsyncClient:
