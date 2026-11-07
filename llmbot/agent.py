@@ -6,7 +6,7 @@ import json
 import logging
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -62,6 +62,8 @@ SHORTEN_NOTE = ("(Not posted: {words} words, the limit is {budget}. Rewrite it i
 GAP_MS = 2 * 3600 * 1000
 WINDOW_LINES = 12
 SHOWN_GAP_MS = 30 * 60 * 1000   # a pause this long inside the window is written as "(40 min later)"
+HISTORY_OWN_WORDS = 25          # and in what get_history and search_messages return
+OWN_WORDS = 12                  # the bot's earlier replies in the window: their first words only
 THREAD_TURNS = 7                # the end of the reply chain with the bot: at most 3 of its own replies
 
 
@@ -98,15 +100,17 @@ def answer_problem(text: str, bot_name: str, recent: list[str], names: tuple[str
 # the bot's replies were 75 (p90 209) although the prompt said "same length as the others". Research agrees that
 # vague length instructions do not hold and that models cannot count their own words: the budget is a number
 # given with the request, counted afterwards, with one shorter rewrite when it is clearly exceeded.
-BUDGETS = {"short": 30, "medium": 60, "long": 150}
+# 2026-11-07, after a morning at 30/60/150: replies felt offhand and a ranking came back as a GIF; raised.
+BUDGETS = {"short": 40, "medium": 80, "long": 200}
 # max_tokens per class: a safety net above the budget, wide enough for a tool call (a meme's captions)
-TOKEN_CAPS = {"short": 300, "medium": 450, "long": 900}
+TOKEN_CAPS = {"short": 350, "medium": 550, "long": 1000}
 OVER = 1.5   # words above budget × OVER: the model is asked once for a shorter version
 CUT = 2.0    # still above budget × CUT after that: cut after the last whole sentence that fits
 _LONG_ASK = re.compile(
     r"\br[ée]sum|\br[ée]cap|\bsummar|\bexpliqu|\bexplain|\blistes?\b|\blist\b|\bprofiling\b|\bprofils? de\b"
     r"|d[ée]taill|\banalys|\bcompar|\bconseils\b|\badvice\b|\brecettes?\b|\brecipes?\b|\b[ée]tapes\b|\bsteps\b"
-    r"|\btuto(?:s|riel)?\b|\btradui|\btranslat", re.I)
+    r"|\btuto(?:s|riel)?\b|\btradui|\btranslat|\bclassement|\bclasse[rsz]?\b|\btop ?\d+|\btier ?list|\branking"
+    r"|\brank\b", re.I)
 _MEDIUM_ASK = re.compile(
     r"\broast|\bclash|\bblagues?\b|\bjokes?\b|\bimite|\bimitate|\bparle[rsz]?\b.{0,15}\bcomme\b|\btalk like"
     r"|\bpo[èe]mes?\b|\bpoems?\b|\bchansons?\b|\bsongs?\b|\bhistoire\b|\bstory\b|\bavis\b|\bopinion"
@@ -364,12 +368,13 @@ class Agent:
                            ". If a tool fails, say you could not look it up;")
         if s.gifs_enabled:
             can.append("- send_gif to react with an animated GIF when it says it better than words (rarely, "
-                       "never for a serious subject; a single one per reply);")
+                       "never for a serious subject, never instead of what was asked; a single one per reply);")
         if s.memes_enabled:
             can.append("- make_meme to answer with a meme: a classic template, the subject of the request copied "
                        "from the request itself (never a name, an object or a joke picked up earlier), and the "
                        "captions about that subject in the language of the request; one per reply, when someone "
-                       "asks for one or the joke lands better as a meme;")
+                       "asks for one or the joke lands better as a meme; never instead of a ranking, a list or an "
+                       "answer that was asked for;")
         can.append(("- get_spend for the cost. " if s.tool_enabled("get_spend") else "- ") +
                    "Your model, only the owner changes it: if asked to change it, say it is not your call.")
         rules = Agent._tool_rules(s)
@@ -421,6 +426,15 @@ class Agent:
                 ids.append(key)
         return line + (f" (image : {', '.join(ids)})" if ids else "")
 
+    def _history_line(self, m: StoredMessage, images: dict[str, dict]) -> str:
+        """A line of get_history or search_messages. The bot's own replies come cut to their first words: read
+        back whole, an old bad one (its reasoning posted as the answer) was copied again (2026-11-07)."""
+        if self._own(m):
+            words = m.text.split()
+            m = replace(m, author_name=f"{self.settings.bot_name} (you)",
+                        text=" ".join(words[:HISTORY_OWN_WORDS]) + ("…" if len(words) > HISTORY_OWN_WORDS else ""))
+        return self._line(m, images)
+
     def _reply_name(self, m: StoredMessage) -> str | None:
         t = self.store.get(m.chat_id, m.reply_to_ts) if m.reply_to_ts else None
         return t.author_name if t else None
@@ -431,22 +445,33 @@ class Agent:
 
     def _window(self, req: AgentRequest, thread: list[StoredMessage], quoted: StoredMessage | None,
                 floor: int | None) -> list[StoredMessage]:
-        """The people's messages since the last long pause, newest WINDOW_LINES. Not the bot's own earlier
-        replies: they were 74 % of the words shown (2026-11-07), so the model copied its own length and
-        running jokes instead of the group. Its replies in the current exchange are in `thread`."""
+        """The messages since the last long pause: the newest WINDOW_LINES of the people's, with the bot's own
+        replies among them (shown shortened by _build_messages). Whole, they were 74 % of the words shown and
+        the model copied their length and running jokes; left out, it saw questions put to it unanswered and
+        answered them again (the BTC price, three times, 2026-11-07)."""
         skip = {m.ts for m in thread} | ({quoted.ts} if quoted else set())
-        people = [m for m in req.window
-                  if not self._own(m) and m.ts not in skip and (floor is None or m.ts >= floor)]
+        msgs = [m for m in req.window if m.ts not in skip and (floor is None or m.ts >= floor)]
         kept: list[StoredMessage] = []
+        people = 0
         after = thread[0].ts if thread else None
-        for m in reversed(people):
+        for m in reversed(msgs):
             if after is not None and after - m.ts > GAP_MS:
                 break
             kept.append(m)
             after = m.ts
-            if len(kept) >= WINDOW_LINES:
-                break
+            if not self._own(m):
+                people += 1
+                if people >= WINDOW_LINES:
+                    break
+        while kept and self._own(kept[-1]):   # the window opens with a person
+            kept.pop()
         return kept[::-1]
+
+    def _own_line(self, m: StoredMessage) -> str:
+        """One of the bot's earlier replies, enough to see what it answered, too short to copy."""
+        words = m.text.split()
+        text = " ".join(words[:OWN_WORDS]) + ("…" if len(words) > OWN_WORDS else "")
+        return f"{self.settings.bot_name} (you): {text}"
 
     def _build_messages(self, req: AgentRequest, images: dict[str, dict], budget: int | None = None) -> list[dict]:
         system = self._system(req)
@@ -464,10 +489,10 @@ class Agent:
             for m in window:
                 if prev is not None and m.ts - prev >= SHOWN_GAP_MS:
                     lines.append(f"({_pause(m.ts - prev)} later)")
-                lines.append(self._line(m, images, with_time=False))
+                lines.append(self._own_line(m) if self._own(m) else self._line(m, images, with_time=False))
                 prev = m.ts
             system += (f"\n\n[CONVERSATION - what people said lately, from {fmt_time(window[0].ts, self.tz)}; "
-                       "your own earlier replies are not shown]\n" + "\n".join(lines))
+                       "your own replies cut short: they are answered, do not answer them again]\n" + "\n".join(lines))
         messages: list[dict] = [{"role": "system", "content": system}]
 
         quoted_in_thread = quoted is not None and any(m.ts == quoted.ts for m in thread)
@@ -511,7 +536,7 @@ class Agent:
                     return ("Nothing since /clear: the context was cleared, I cannot see what was said before. "
                             "Tell me what I need to know, or ask me to summarize from now on.")
                 return "No messages in this period."
-            return "\n".join(self._line(m, images) for m in msgs)
+            return "\n".join(self._history_line(m, images) for m in msgs)
 
         if name == "generate_image":
             if not self.settings.images_enabled:
@@ -594,7 +619,7 @@ class Agent:
             found = self.store.search(req.chat_id, query, limit=limit, after_ts=after, before_ts=req.thread[-1].ts)
             if not found:
                 return "No message matches those words."
-            return "\n".join(self._line(m, images) for m in found)
+            return "\n".join(self._history_line(m, images) for m in found)
 
         if name == "remind":
             message = str(args.get("message") or "").strip()

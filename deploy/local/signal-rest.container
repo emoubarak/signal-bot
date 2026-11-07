@@ -19,6 +19,16 @@ Environment=JSON_RPC_RECEIVE_MODE=manual
 PublishPort=127.0.0.1:8086:8080
 # Les données du compte lié (clés Signal) : à sauvegarder, à ne jamais perdre.
 Volume=signal-data:/home/.local/share/signal-cli
+# Réseau pasta (Podman sans root) : la route et le DNS de la machine sont copiés au démarrage du conteneur. Quand
+# le Wi-Fi change de réseau, le conteneur reste sans route ni DNS : les textes passent encore par une connexion
+# déjà ouverte, mais chaque image, GIF ou mème échoue (« UnknownHostException: cdn3.signal.org », 2026-11-07).
+# Le contrôle de santé vérifie donc aussi le DNS ; trois échecs d'affilée tuent le conteneur, que systemd relance
+# avec le réseau du moment.
+HealthCmd=sh -c 'curl -fsS http://localhost:8080/v1/health >/dev/null && getent hosts chat.signal.org >/dev/null'
+HealthInterval=60s
+HealthTimeout=10s
+HealthRetries=3
+HealthOnFailure=kill
 
 [Service]
 Restart=always

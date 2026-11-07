@@ -28,6 +28,8 @@ def test_length_class():
     assert length_class("Mop résume") == "long"
     assert length_class("mop dresse un profiling de chaque personne") == "long"
     assert length_class("mop donne nous des conseils") == "long"
+    assert length_class("Mop fait un classement des religions par niveau d'abbération") == "long"
+    assert length_class("mop top 5 des pires films") == "long"
     assert length_class("mop c'est qui", with_image=True) == "medium"
     assert length_class("mop t'as vu ça https://tiktok.com/x") == "short"  # read_page makes it long, not the link
     for not_long in ("contenu explicite", "on se tutoie", "présumé innocent", "t'as vu son profil", "conseil municipal"):
@@ -51,8 +53,10 @@ def test_window_people_only_since_the_last_pause():
                  StoredMessage("c", 3 * h + 40, "+bot", "Mop", KIND_IMAGE, "[gif] mdr")])  # a GIF the bot sent
     thread = [msg(3 * h + 60, text="mop ?")]
     kept = AGENT._window(AgentRequest("c", None, "u", thread, window, None, 0), thread, None, None)
-    assert len(kept) == WINDOW_LINES and kept[-1].text == "m19"
-    assert all(m.author_id != "+bot" for m in kept) and "vieux sujet" not in [m.text for m in kept]
+    people = [m for m in kept if m.author_id != "+bot"]
+    assert len(people) == WINDOW_LINES and kept[-1].text == "[gif] mdr"   # the bot's own replies are kept, not counted
+    assert [m.text for m in kept if m.author_id == "+bot"] == ["ancienne blague", "[gif] mdr"]
+    assert "vieux sujet" not in [m.text for m in kept]
     # a pause longer than GAP_MS just before the call: nothing from before it
     late = [msg(3 * h + GAP_MS + 1000, text="mop ?")]
     assert AGENT._window(AgentRequest("c", None, "u", late, window, None, 0), late, None, None) == []
@@ -134,3 +138,13 @@ async def test_em_dashes_never_posted(harness: Harness):
     harness.llm.script = ["Le Plerome, c'est le spirituel pur — pas de Tesla.\n— et voilà"]
     await harness.run(group_message(PAUL, "jarvis musk ?"))
     assert harness.sent_texts() == ["Le Plerome, c'est le spirituel pur, pas de Tesla.\n- et voilà"]
+
+
+async def test_history_tool_cuts_the_bots_own_replies(harness: Harness):
+    harness.llm.answer = " ".join(f"mot{i}" for i in range(40))
+    await harness.run(group_message(PAUL, "jarvis dis un truc"))
+    harness.llm.script = [{"name": "get_history", "arguments": {"count": 10}}, "ok"]
+    await harness.run(group_message(LEA, "jarvis résume"))
+    out = [m for m in harness.llm.chat_calls[-1]["messages"] if m["role"] == "tool"][0]["content"]
+    assert "Paul: jarvis dis un truc" in out and "Jarvis (you) (replying to Paul): mot0" in out
+    assert "mot24…" in out and "mot25" not in out
