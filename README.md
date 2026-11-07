@@ -173,4 +173,4 @@ Tests: `uv run pytest`.
 
 ## License
 
-MIT
+MIT, see [LICENSE](LICENSE).
