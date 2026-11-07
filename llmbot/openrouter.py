@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import logging
 from dataclasses import dataclass, field
 
@@ -24,6 +25,8 @@ IMAGE_DEADLINE = 150.0
 # A local model runs on someone's own machine: a big mixture takes seconds to read
 # a long context, and llama-swap may have to load the model before answering.
 LOCAL_CHAT_DEADLINE = 300.0
+# A local speech server reads a minute of voice in a few seconds on a CPU.
+LOCAL_STT_DEADLINE = 60.0
 
 
 class OpenRouterError(Exception):
@@ -252,6 +255,25 @@ class OpenRouter:
                 return second
             result.truncated = True
         return result
+
+    async def transcribe_local(self, *, base_url: str, audio: bytes, audio_format: str, phrases: list[str]) -> str:
+        """Voice note to text on a local OpenAI-compatible speech server (`/audio/transcriptions`, multipart).
+        `phrases` (the bot's names) are boosted so they come out spelled right. Language is detected."""
+        form = {"speech_contexts": json.dumps([{"phrases": phrases, "boost": 3}])} if phrases else {}
+        try:
+            async with httpx.AsyncClient(timeout=LOCAL_STT_DEADLINE) as client:
+                resp = await client.post(f"{base_url}/audio/transcriptions", data=form,
+                                         files={"file": (f"voice.{audio_format}", audio, f"audio/{audio_format}")})
+        except httpx.HTTPError as e:
+            raise OpenRouterError(f"speech server: {e or type(e).__name__}") from e
+        if resp.status_code >= 400:
+            raise OpenRouterError(f"speech server HTTP {resp.status_code}: {resp.text[:200]}", resp.status_code)
+        try:
+            text = resp.json().get("text", "")
+        except (ValueError, AttributeError) as e:
+            raise OpenRouterError(f"speech server: invalid JSON: {resp.text[:200]}") from e
+        logger.info("transcribe local %s: %d characters", base_url, len(text or ""))
+        return (text or "").strip()
 
     async def transcribe(self, *, model: str, audio: bytes, audio_format: str, prompt: str) -> ChatResult:
         """Voice note to text. Audio input is an OpenRouter (Gemini-class) feature:

@@ -18,7 +18,7 @@ from llmbot import prompts, syncflag
 from llmbot.agent import Agent, AgentRequest
 from llmbot.personas import Registry
 from llmbot.config import Settings
-from llmbot.media import audio_for_model, image_for_model, is_audio, is_image, save_attachment
+from llmbot.media import audio_for_model, image_for_model, is_audio, is_image, save_attachment, to_mp3
 from llmbot.openrouter import OpenRouter, OpenRouterError, data_url
 from llmbot.store import KIND_BOT, KIND_IMAGE, KIND_TEXT, KIND_VOICE, Store, StoredMessage
 from llmbot.syncflag import is_sync
@@ -243,6 +243,23 @@ class LLMHandler(DataMessageHandler):
     async def _transcribe(self, c: DataMessageContext, path: Path, content_type: str | None) -> str:
         if not self.settings.transcription_enabled:
             return "[voice note not transcribed: transcription disabled]"
+        s = self.settings
+        if s.transcribe_base_url:
+            try:
+                # the local server reads WAV, FLAC or MP3 only: Signal's AAC is converted
+                text = await self.llm.transcribe_local(base_url=s.transcribe_base_url, audio=await to_mp3(path.read_bytes()),
+                                                       audio_format="mp3", phrases=[s.bot_name, *s.bot_aliases])
+                if text:
+                    self._usage(c, USAGE_TRANSCRIBE, "local speech server", 0.0)
+                    return text
+                logger.warning("local speech server heard nothing%s",
+                               ", trying OpenRouter" if s.transcribe_model else "")
+            except Exception as e:
+                logger.warning("local transcription failed (%s)%s", e, ", trying OpenRouter" if s.transcribe_model else "")
+                if not s.transcribe_model:
+                    return f"[voice note not transcribed: {type(e).__name__}]"
+            if not s.transcribe_model:
+                return "[inaudible]"
         try:
             audio, fmt = await audio_for_model(path.read_bytes(), content_type)
             names = ", ".join([self.settings.bot_name, *self.settings.bot_aliases])

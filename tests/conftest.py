@@ -67,6 +67,16 @@ class FakeLLM:
         return ChatResult(text=self.answer, finish_reason="stop", model=model, cost=0.0001,
                           message={"role": "assistant", "content": self.answer})
 
+    # local speech server: a str is what it hears, an Exception is raised
+    local_heard: object = "bonjour mop ici une note vocale"
+    local_stt_calls: list[dict] = field(default_factory=list)
+
+    async def transcribe_local(self, *, base_url, audio, audio_format, phrases):
+        self.local_stt_calls.append({"base_url": base_url, "format": audio_format, "phrases": phrases})
+        if isinstance(self.local_heard, Exception):
+            raise self.local_heard
+        return self.local_heard
+
     async def transcribe(self, *, model, audio, audio_format, prompt):
         self.transcribe_calls.append({"model": model, "format": audio_format, "size": len(audio)})
         return ChatResult(text=self.transcript, finish_reason="stop", model=model, cost=0.00005)

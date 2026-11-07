@@ -4,7 +4,7 @@ A bot that lives in your Signal groups. Call it by its name and say what you wan
 
 Runs on [OpenRouter](https://openrouter.ai) with `deepseek/deepseek-v4.1-flash` for chat and tool use, `meta/muse-image` for images, `google/gemini-3.1-flash-lite` for voice notes. All three can be changed.
 
-Chat can also run on a **local model** instead: set `LOCAL_BASE_URL` to any OpenAI-compatible server (llama-swap, llama-server, vLLM, Ollama) and chat and tool use go there, with no API key and nothing leaving the machine. Images the bot is shown are read by the local model when it reads images (Qwen3.8 on Strata does). Image generation and voice notes have no local equivalent in a text server and stay on OpenRouter, or are switched off by emptying `IMAGE_MODEL` and `TRANSCRIBE_MODEL`.
+Chat can also run on a **local model** instead: set `LOCAL_BASE_URL` to any OpenAI-compatible server (llama-swap, llama-server, vLLM, Ollama) and chat and tool use go there, with no API key and nothing leaving the machine. Images the bot is shown are read by the local model when it reads images (Qwen3.8 on Strata does). Image generation and voice notes have no local equivalent in a text server and stay on OpenRouter, or are switched off by emptying `IMAGE_MODEL` and `TRANSCRIBE_MODEL`. Voice notes can also go to a local speech-to-text server with `TRANSCRIBE_BASE_URL` (NeMo Parakeet, for instance).
 
 ## What it does
 
@@ -84,7 +84,8 @@ The model must support tool calls, which is what the bot drives its history, ima
 | `BOT_ALIASES` | none | Other names that address the bot, comma-separated |
 | `CHAT_MODEL` | `deepseek/deepseek-v4.1-flash` | Chat model: an OpenRouter slug, or a name the local server serves (a llama-swap selector works). `OPENROUTER_MODEL` is still read as the older name |
 | `IMAGE_MODEL` | `meta/muse-image` | Image model, from the OpenRouter Image API. Empty = image generation off |
-| `TRANSCRIBE_MODEL` | `google/gemini-3.1-flash-lite` | Audio-input model for voice notes. Empty = transcription off |
+| `TRANSCRIBE_MODEL` | `google/gemini-3.1-flash-lite` | Audio-input model for voice notes. Empty = transcription off (unless `TRANSCRIBE_BASE_URL` is set) |
+| `TRANSCRIBE_BASE_URL` | empty | Local speech-to-text server (OpenAI `/audio/transcriptions`, e.g. NeMo Parakeet): voice notes go there first, free and on your machine; `TRANSCRIBE_MODEL` is then only the fallback |
 | `ALLOWED_GROUPS` | all | Group ids (or names) the bot listens to, comma-separated. Prefer the id (`group.…`, from `GET /v1/groups/<number>`): a name is resolved once at startup, so after a rename the bot would ignore the group from its next restart |
 | `ALLOWED_NUMBERS` | all | Numbers allowed to write to it in private |
 | `OWNER_NUMBER` | none | Your number: the only one who can `/clear`, and who gets a private message on every restart saying which model it came back on |

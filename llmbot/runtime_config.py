@@ -37,6 +37,7 @@ FIELDS: dict[str, Field] = {f.key: f for f in [
     Field("chat_model", "text", allow_empty=False),
     Field("image_model", "text"),
     Field("transcribe_model", "text"),
+    Field("transcribe_base_url", "url"),
     Field("openrouter_api_key", "secret"),
     # tools
     Field("web_tools", "bool"),
@@ -145,7 +146,7 @@ def check(effective: Settings) -> list[str]:
     if not effective.openrouter_api_key:
         if effective.image_model:
             warnings.append("Sans clé OpenRouter, les images ne peuvent pas être créées.")
-        if effective.transcribe_model:
+        if effective.transcribe_model and not effective.transcribe_base_url:
             warnings.append("Sans clé OpenRouter, les messages vocaux ne seront pas transcrits.")
     ZoneInfo(effective.timezone)
     return warnings

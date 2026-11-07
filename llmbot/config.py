@@ -26,6 +26,9 @@ class Settings:
     chat_model: str = "deepseek/deepseek-v4.1-flash"
     image_model: str = "meta/muse-image"
     transcribe_model: str = "google/gemini-3.1-flash-lite"
+    # A local speech-to-text server (OpenAI /audio/transcriptions, e.g. NeMo Parakeet): voice notes go there
+    # first, and to TRANSCRIBE_MODEL on OpenRouter only when it fails or hears nothing.
+    transcribe_base_url: str = ""
 
     # Local OpenAI-compatible chat endpoint (llama-swap, llama-server, vLLM…).
     # When set, chat goes there instead of OpenRouter, and it needs no key.
@@ -104,7 +107,7 @@ class Settings:
 
     @property
     def transcription_enabled(self) -> bool:
-        return bool(self.transcribe_model)
+        return bool(self.transcribe_base_url or self.transcribe_model)
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> Settings:
@@ -123,6 +126,7 @@ class Settings:
             chat_model=e.get("CHAT_MODEL") or e.get("OPENROUTER_MODEL") or cls.chat_model,
             image_model=e.get("IMAGE_MODEL", cls.image_model),
             transcribe_model=e.get("TRANSCRIBE_MODEL", cls.transcribe_model),
+            transcribe_base_url=(e.get("TRANSCRIBE_BASE_URL") or "").rstrip("/"),
             local_base_url=local_base_url,
             bot_name=e.get("BOT_NAME") or cls.bot_name,
             bot_aliases=_list(e.get("BOT_ALIASES")),

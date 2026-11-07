@@ -278,7 +278,8 @@ const DEF = {
   local_base_url: ["Adresse du serveur local", "Un serveur compatible OpenAI : llama-swap, llama-server, Ollama ou vLLM.", "http://127.0.0.1:8089/v1"],
   chat_model: ["Modèle de conversation", "Le modèle qui écrit les réponses. Avec un serveur local, le nom que ce serveur connaît.", "deepseek/deepseek-v4.1-flash"],
   image_model: ["Modèle d'images", "Laisse vide pour interdire la création d'images. Toujours fait par OpenRouter, même avec un serveur local.", "meta/muse-image"],
-  transcribe_model: ["Modèle de transcription des vocaux", "Laisse vide pour ne pas transcrire les messages vocaux. Toujours fait par OpenRouter.", "google/gemini-3.1-flash-lite"],
+  transcribe_base_url: ["Serveur local de transcription des vocaux", "Un serveur compatible OpenAI pour la voix (/audio/transcriptions), par exemple Parakeet. Gratuit, rien ne sort de chez toi. Vide = OpenRouter.", "http://127.0.0.1:8094/v1"],
+  transcribe_model: ["Modèle de transcription des vocaux", "Sur OpenRouter. Avec un serveur local de transcription, il ne sert que si ce serveur échoue ou n'entend rien. Vide partout = vocaux non transcrits.", "google/gemini-3.1-flash-lite"],
   openrouter_api_key: ["Clé OpenRouter", "Sert aux réponses (si OpenRouter est le fournisseur), aux images et aux vocaux."],
   klipy_api_key: ["Clé Klipy", "Gratuite : crée un compte sur partner.klipy.com, puis « API Keys »."],
   web_tools: ["Outils gratuits (internet, météo, calcul)", "Interrupteur général de la recherche, de la lecture de lien, de la météo, de l'heure et de la calculatrice."],
@@ -462,9 +463,10 @@ function pageProvider() {
     h("datalist", { id: "dl-chat" }, (local ? localModels : models.chat).slice(0, 400).map(m => h("option", { value: m }))),
     h("div", { class: "row" }, testBtn, msg)));
   cards.push(h("div", { class: "card stack" },
-    h("div", null, h("h3", null, "OpenRouter"), h("p", { class: "lead" }, "Même avec un serveur local, les images et les vocaux passent par OpenRouter.")),
+    h("div", null, h("h3", null, "OpenRouter"), h("p", { class: "lead" }, "Même avec un serveur local, les images passent par OpenRouter. Les vocaux aussi, sauf avec un serveur local de transcription.")),
     secretField("openrouter_api_key", { test: local ? null : null }),
     textField("image_model", { list: "dl-image" }), h("datalist", { id: "dl-image" }, models.image.slice(0, 300).map(m => h("option", { value: m }))),
+    textField("transcribe_base_url"),
     textField("transcribe_model", { list: "dl-audio" }), h("datalist", { id: "dl-audio" }, models.audio.slice(0, 300).map(m => h("option", { value: m })))));
   return cards;
 }
