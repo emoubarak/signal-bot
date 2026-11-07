@@ -255,13 +255,15 @@ class OpenRouter:
             result.truncated = True
         return result
 
-    async def transcribe_local(self, *, base_url: str, audio: bytes, audio_format: str) -> str:
+    async def transcribe_local(self, *, base_url: str, audio: bytes, audio_format: str, language: str = "") -> str:
         """Voice note to text on a local OpenAI-compatible speech server (`/audio/transcriptions`, multipart),
         language detected by the server. No word boost for the bot's name: NeMo Parakeet ignores both
-        `prompt` and `speech_contexts` (no language model in its decoder, 2026-11-07)."""
+        `prompt` and `speech_contexts` (no language model in its decoder, 2026-11-07). `language` is for a
+        server that takes it (Nemotron does, Parakeet ignores it)."""
         try:
             async with httpx.AsyncClient(timeout=LOCAL_STT_DEADLINE) as client:
                 resp = await client.post(f"{base_url}/audio/transcriptions",
+                                         data={"language": language} if language else {},
                                          files={"file": (f"voice.{audio_format}", audio, f"audio/{audio_format}")})
         except httpx.HTTPError as e:
             raise OpenRouterError(f"speech server: {e or type(e).__name__}") from e

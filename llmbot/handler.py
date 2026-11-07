@@ -18,7 +18,7 @@ from llmbot import prompts, syncflag
 from llmbot.agent import Agent, AgentRequest
 from llmbot.personas import Registry
 from llmbot.config import Settings
-from llmbot.media import audio_for_model, image_for_model, is_audio, is_image, save_attachment, to_mp3
+from llmbot.media import audio_for_model, foreign_script, image_for_model, is_audio, is_image, mp3_pieces, save_attachment
 from llmbot.openrouter import OpenRouter, OpenRouterError, data_url
 from llmbot.store import KIND_BOT, KIND_IMAGE, KIND_TEXT, KIND_VOICE, Store, StoredMessage
 from llmbot.syncflag import is_sync
@@ -246,9 +246,7 @@ class LLMHandler(DataMessageHandler):
         s = self.settings
         if s.transcribe_base_url:
             try:
-                # the local server reads WAV, FLAC or MP3 only: Signal's AAC is converted
-                text = await self.llm.transcribe_local(base_url=s.transcribe_base_url, audio=await to_mp3(path.read_bytes()),
-                                                       audio_format="mp3")
+                text = await self._transcribe_locally(path)
                 if text:
                     self._usage(c, USAGE_TRANSCRIBE, "local speech server", 0.0)
                     return text
@@ -273,6 +271,27 @@ class LLMHandler(DataMessageHandler):
         except Exception as e:
             logger.exception("transcription failed")
             return f"[voice note not transcribed: {type(e).__name__}]"
+
+    async def _transcribe_locally(self, path: Path) -> str:
+        """The local speech server: MP3 (it reads WAV, FLAC or MP3, not Signal's AAC), in pieces of 90 s at
+        most sent one after the other (its memory grows with the audio), each asked again on the retry
+        server, told the language, when it came out in another alphabet."""
+        s = self.settings
+        texts = []
+        for piece in await mp3_pieces(path.read_bytes()):
+            text = await self.llm.transcribe_local(base_url=s.transcribe_base_url, audio=piece, audio_format="mp3")
+            if text and foreign_script(text) and s.transcribe_retry_url:
+                try:
+                    again = await self.llm.transcribe_local(base_url=s.transcribe_retry_url, audio=piece,
+                                                            audio_format="mp3", language=s.transcribe_language)
+                except Exception as e:
+                    logger.warning("retry speech server failed (%s), keeping: %s", e, text[:80])
+                else:
+                    if again and not foreign_script(again):
+                        logger.info("voice note in another alphabet (%s), heard again: %s", text[:60], again[:60])
+                        text = again
+            texts.append(text)
+        return " ".join(t for t in texts if t).strip()
 
     async def _can_describe(self) -> bool:
         """Describing runs on the chat model: OpenRouter needs its key; a local server must

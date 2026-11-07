@@ -29,6 +29,10 @@ class Settings:
     # A local speech-to-text server (OpenAI /audio/transcriptions, e.g. NeMo Parakeet): voice notes go there
     # first, and to TRANSCRIBE_MODEL on OpenRouter only when it fails or hears nothing.
     transcribe_base_url: str = ""
+    # A second local speech server told the language (Nemotron), asked again when the first one's text came
+    # out in another alphabet (it guesses the language alone and sometimes guesses Russian for French).
+    transcribe_retry_url: str = ""
+    transcribe_language: str = ""
 
     # Local OpenAI-compatible chat endpoint (llama-swap, llama-server, vLLM…).
     # When set, chat goes there instead of OpenRouter, and it needs no key.
@@ -127,6 +131,8 @@ class Settings:
             image_model=e.get("IMAGE_MODEL", cls.image_model),
             transcribe_model=e.get("TRANSCRIBE_MODEL", cls.transcribe_model),
             transcribe_base_url=(e.get("TRANSCRIBE_BASE_URL") or "").rstrip("/"),
+            transcribe_retry_url=(e.get("TRANSCRIBE_RETRY_URL") or "").rstrip("/"),
+            transcribe_language=e.get("TRANSCRIBE_LANGUAGE") or "",
             local_base_url=local_base_url,
             bot_name=e.get("BOT_NAME") or cls.bot_name,
             bot_aliases=_list(e.get("BOT_ALIASES")),
