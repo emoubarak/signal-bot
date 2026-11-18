@@ -345,7 +345,9 @@ class AdminService:
     def signal_status(self) -> dict:
         s = self.live.snapshot
         base = f"http://{s.signal_service}"
-        out: dict = {"service": s.signal_service, "phone_number": s.phone_number, "reachable": False, "accounts": []}
+        # registered: True / False, or None when the account list could not be read (never shown as connected)
+        out: dict = {"service": s.signal_service, "phone_number": s.phone_number, "reachable": False, "accounts": [],
+                     "registered": None}
         try:
             out["reachable"] = httpx.get(base + "/v1/health", timeout=3).is_success
             if out["reachable"]:

@@ -278,6 +278,16 @@ def test_signal_status_sees_the_linked_number_in_both_formats(admin, monkeypatch
     assert st["reachable"] is True and st["registered"] is True and st["accounts"] == ["+33612345678"]
 
 
+def test_signal_status_is_unknown_when_the_account_list_is_not_json(admin, monkeypatch):
+    def fake_get(url, **k):
+        if url.endswith("/v1/accounts"):
+            return httpx.Response(500, text="<html>oops</html>", request=httpx.Request("GET", url))
+        return httpx.Response(200, json={}, request=httpx.Request("GET", url))
+    monkeypatch.setattr("llmbot.admin.httpx.get", fake_get)
+    st = admin.signal_status()
+    assert st["reachable"] is True and st["registered"] is None
+
+
 def test_signal_status_says_unlinked_when_the_number_is_missing(admin, monkeypatch):
     monkeypatch.setattr("llmbot.admin.httpx.get", lambda url, **k: httpx.Response(
         200, json=[{"number": "+33700000000"}] if url.endswith("/v1/accounts") else {}, request=httpx.Request("GET", url)))

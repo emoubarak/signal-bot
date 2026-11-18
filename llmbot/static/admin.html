@@ -183,6 +183,7 @@ dialog.modal::backdrop{background:rgba(0,0,0,.5);animation:fade .18s ease}
 /* connexion */
 .login{min-height:100vh;min-height:100dvh;display:grid;place-items:center;padding:calc(20px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom))}
 .login .card{width:100%;max-width:380px;display:grid;gap:16px;padding:28px}
+.login .help:empty{display:none}
 
 @media (max-width:820px){
   /* téléphone : barre d'onglets en bas (à portée du pouce), contenu sous la barre d'état */
@@ -259,8 +260,9 @@ let installPrompt = null;
 async function install() {
   if (!installPrompt) return;
   const p = installPrompt;
-  await p.prompt();
-  if ((await p.userChoice).outcome === "accepted") { installPrompt = null; fillInstallSlots(); }
+  installPrompt = null;            // a prompt can be shown once; the browser offers a new one later if it wants
+  fillInstallSlots();
+  try { await p.prompt(); } catch (e) { /* already used */ }
 }
 function fillInstallSlots() {
   for (const slot of document.querySelectorAll(".install-slot")) {
@@ -270,16 +272,25 @@ function fillInstallSlots() {
 }
 window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; fillInstallSlots(); });
 window.addEventListener("appinstalled", () => { installPrompt = null; fillInstallSlots(); });
-// phone keyboard open (a text field has the focus): the bottom tab bar steps aside (CSS .kb)
+// phone keyboard open: a text field has the focus AND the page got shorter (the keyboard takes the
+// bottom, interactive-widget=resizes-content). The bottom tab bar then steps aside (CSS .kb). Android's
+// back gesture closes the keyboard but leaves the field focused: the height comes back, so does the bar.
 const typing = el => el && el.matches && el.matches("input:not([type=checkbox]),textarea");
-document.addEventListener("focusin", e => { if (typing(e.target)) document.documentElement.classList.add("kb"); });
-document.addEventListener("focusout", () => setTimeout(() => { if (!typing(document.activeElement)) document.documentElement.classList.remove("kb"); }, 60));
+const tallest = {};   // full height seen for each width (portrait, landscape)
+function syncKeyboard() {
+  const full = tallest[innerWidth] = Math.max(tallest[innerWidth] || 0, innerHeight);
+  document.documentElement.classList.toggle("kb", typing(document.activeElement) && innerHeight < full - 120);
+}
+addEventListener("resize", syncKeyboard);
+document.addEventListener("focusin", syncKeyboard);
+document.addEventListener("focusout", () => setTimeout(syncKeyboard, 60));
 /* ---------- petits outils ---------- */
 const $ = (s, el = document) => el.querySelector(s);
 function h(tag, props, ...kids) {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(props || {})) {
-    if (v === false || v == null) continue;
+    if (v == null) continue;
+    if (v === false && !(k in el)) continue;   // false attribute: left out; false property (spellcheck…): set
     if (k === "class") el.className = v;
     else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
     else if (k === "value") el.value = v;
@@ -319,7 +330,9 @@ async function api(method, path, body) {
 // that opened it, a tap on the dimmed background closes it too
 function openDialog(title, box, onClose) {
   const d = h("dialog", { class: "modal", "aria-label": title }, box);
-  d.addEventListener("click", e => { if (e.target === d) d.close(); });
+  let fromBackdrop = false;   // a press that starts in the box and ends outside it is not a tap on the backdrop
+  d.addEventListener("pointerdown", e => { fromBackdrop = e.target === d; });
+  d.addEventListener("click", e => { if (e.target === d && fromBackdrop) d.close(); });
   d.addEventListener("close", () => { d.remove(); if (onClose) onClose(); });
   document.body.append(d);
   d.showModal();
@@ -342,7 +355,7 @@ function syncThemeColor() {
   const t = document.documentElement.dataset.theme;
   for (const m of document.querySelectorAll('meta[name="theme-color"]')) m.content = BAR[t || (m.media.includes("dark") ? "dark" : "light")];
 }
-try { const t = localStorage.getItem("admin-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* stockage bloqué */ }
+try { const t = localStorage.getItem("admin-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) { /* stockage bloqué */ }
 syncThemeColor();
 function toggleTheme() {
   const cur = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme:dark)").matches ? "dark" : "light");
@@ -474,12 +487,9 @@ function meta(key) {
   }
   return bits.length ? h("div", { class: "meta" }, bits) : null;
 }
-// the phone keyboard each value needs: URL keys for addresses, a dial pad for numbers, no auto-capitals on technical values
-const KEYBOARD = {
-  local_base_url: { type: "url", inputmode: "url" }, transcribe_base_url: { type: "url", inputmode: "url" },
-  phone_number: { type: "tel", inputmode: "tel" }, owner_number: { type: "tel", inputmode: "tel" },
-  bot_name: { autocapitalize: "sentences" },
-};
+// the phone keyboard each kind of value needs: URL keys for addresses, a dial pad for a number,
+// no auto-capitals on technical values
+const KEYBOARD = { url: { type: "url", inputmode: "url" }, phone: { type: "tel", inputmode: "tel" } };
 function textField(key, opts = {}) {
   const [label, help, ph] = DEF[key];
   const f = S.fields[key];
@@ -491,8 +501,8 @@ function textField(key, opts = {}) {
   } else if (f.kind === "int") {
     el = h("input", { id, type: "number", min: 0, inputmode: "numeric", enterkeyhint: "done", value: D.values[key], oninput: e => { D.values[key] = e.target.value === "" ? "" : Number(e.target.value); D.reset.delete(key); update(); } });
   } else {
-    const kb = KEYBOARD[key] || {};
-    el = h("input", { id, type: kb.type || "text", inputmode: kb.inputmode, autocomplete: "off", autocapitalize: kb.autocapitalize || "off", spellcheck: false, enterkeyhint: "done",
+    const kb = KEYBOARD[f.kind] || {};
+    el = h("input", { id, type: kb.type || "text", inputmode: kb.inputmode, autocomplete: "off", autocapitalize: key === "bot_name" ? "sentences" : "off", spellcheck: false, enterkeyhint: "done",
       placeholder: ph || "", value: D.values[key] ?? "", list: opts.list || undefined,
       oninput: e => { D.values[key] = e.target.value; D.reset.delete(key); if (key === "local_base_url") lastLocalUrl = e.target.value; update(); } });
   }
@@ -532,7 +542,8 @@ function pageOverview() {
   const sig = signal;
   let sigPill = h("span", { class: "pill idle" }, "Vérification…");
   if (sig) sigPill = !sig.reachable ? h("span", { class: "pill bad" }, "signal-cli ne répond pas")
-    : sig.registered === false ? h("span", { class: "pill warn" }, "Compte non lié") : h("span", { class: "pill ok" }, "Connecté");
+    : sig.registered === false ? h("span", { class: "pill warn" }, "Compte non lié")
+    : sig.registered ? h("span", { class: "pill ok" }, "Connecté") : h("span", { class: "pill warn" }, "Compte non vérifié");
   const out = [];
   if (S.restart_pending.length) out.push(h("div", { class: "banner warn" }, h("span", null, h("b", null, "Un redémarrage est nécessaire "), "pour appliquer : " + S.restart_pending.map(k => (DEF[k] || [k])[0].toLowerCase()).join(", ") + "."),
     h("button", { class: "btn sm", onclick: restart }, "Redémarrer maintenant")));
@@ -607,8 +618,9 @@ function openTool(name) {
   row.scrollIntoView({ block: "center" });
   row.classList.add("flash");
   setTimeout(() => row.classList.remove("flash"), 1600);
-  const target = row.querySelector(".btn") || row.querySelector("input");
+  const target = row.querySelector(".btn:not([disabled]), input:not([disabled])");
   if (target) target.focus({ preventScroll: true });
+  else { row.tabIndex = -1; row.focus({ preventScroll: true }); }
 }
 function pageTools() {
   const groups = {};
@@ -625,6 +637,7 @@ function pageAccount() {
   if (!sg) status = h("span", { class: "pill idle" }, "Vérification…");
   else if (!sg.reachable) status = h("span", { class: "pill bad" }, "signal-cli ne répond pas à " + sg.service);
   else if (sg.registered === false) status = h("span", { class: "pill warn" }, "Ce numéro n'est pas lié à signal-cli");
+  else if (!sg.registered) status = h("span", { class: "pill warn" }, "Liste des comptes illisible : réessaie avec « Revérifier »");
   else status = h("span", { class: "pill ok" }, "Connecté à Signal");
   return [
     h("div", { class: "card stack" }, h("div", null, h("h3", null, "Compte Signal"), h("p", { class: "lead" }, "Le numéro avec lequel le bot lit et écrit.")),
@@ -731,7 +744,7 @@ function render() {
   const n = changedKeys().length;
   const nav = PAGES.map(([id, label, , , short]) => {
     const badge = id === "overview" && S.restart_pending.length ? h("span", { class: "pill warn badge" }, "Redémarrage") : null;
-    return h("button", { class: id === page ? "on" : "", "aria-label": label, "aria-current": id === page ? "page" : undefined, onclick: () => { page = id; saveError = ""; history.replaceState(null, "", "#" + id); render(); window.scrollTo(0, 0); if (id === "account") refreshSignal(); if (id === "provider") refreshModels(); } },
+    return h("button", { class: id === page ? "on" : "", "aria-label": badge ? label + ", redémarrage nécessaire" : label, "aria-current": id === page ? "page" : undefined, onclick: () => { page = id; saveError = ""; history.replaceState(null, "", "#" + id); render(); window.scrollTo(0, 0); if (id === "account") refreshSignal(); if (id === "provider") refreshModels(); } },
       icon(id), h("span", { class: "lbl" }, label), h("span", { class: "lbl-s" }, short), badge);
   });
   const themeBtn = (cls, text) => h("button", { class: cls, type: "button", onclick: toggleTheme, "aria-label": "Changer de thème clair ou sombre" }, icon("theme"), text);
