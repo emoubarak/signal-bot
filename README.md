@@ -64,7 +64,7 @@ Point `LOCAL_BASE_URL` at any OpenAI-compatible server to keep chat and tool use
 
 ```bash
 LOCAL_BASE_URL=http://my-host.tailnet-name.ts.net:8089/v1   # llama-swap, llama-server, vLLM, Ollama…
-CHAT_MODEL=qwen3.8-flash-next-ablit                         # whatever the server serves; a llama-swap selector loads it on demand
+CHAT_MODEL=qwen3.8                                          # whatever the server serves; a llama-swap selector (strategy: warm) answers with whichever target is loaded
 IMAGE_MODEL=                                                # empty: a text server has no /images endpoint
 TRANSCRIBE_MODEL=                                           # empty: it ignores audio input too
 OPENROUTER_API_KEY=
