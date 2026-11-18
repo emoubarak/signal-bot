@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import hmac
 import json
 import logging
@@ -93,7 +94,9 @@ class AdminService:
         self.started_at = started_at or time.time()
         self.started_with = live.snapshot  # what the running process was built with, to tell what waits for a restart
         self._lock = threading.Lock()      # one change at a time; also guards the sessions below
-        self._sessions: dict[str, float] = {}
+        # sessions: sha256 of the cookie -> expiry, kept in data_dir so a restart of the bot does not sign the page out
+        # (the installed phone app asked for the password again after every restart)
+        self._sessions: dict[str, float] = self._load_sessions()
         self._fails: dict[str, tuple[int, float]] = {}
         self._catalog: tuple[float, dict] | None = None
         self.server: _Server | None = None
@@ -119,6 +122,35 @@ class AdminService:
 
     # ── authentication ──────────────────────────────────────────────────────
 
+    def _sessions_file(self) -> Path:
+        return Path(self.base_env.data_dir) / "admin_sessions.json"
+
+    def _load_sessions(self) -> dict[str, float]:
+        try:
+            now = time.time()
+            raw = json.loads(self._sessions_file().read_text())
+            return {k: float(v) for k, v in raw.items() if isinstance(k, str) and len(k) == 64 and float(v) > now}
+        except (OSError, ValueError, AttributeError):
+            return {}
+
+    def _save_sessions(self) -> None:
+        """Atomic write, owner-only. Hashes only: the file never holds a usable cookie."""
+        f = self._sessions_file()
+        try:
+            if not f.parent.is_dir():
+                return
+            tmp = f.with_suffix(".tmp")
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as out:
+                json.dump(self._sessions, out)
+            os.replace(tmp, f)
+        except OSError:
+            logger.warning("admin: sessions not saved to %s", f)
+
+    @staticmethod
+    def _key(sid: str) -> str:
+        return hashlib.sha256(sid.encode()).hexdigest()
+
     def login(self, token: str, ip: str) -> str | None:
         """A new session id when the token is right; None when it is wrong. Five wrong tries lock the address for a minute."""
         now = time.time()
@@ -131,7 +163,8 @@ class AdminService:
                 self._fails.pop(ip, None)
                 self._sessions = {k: v for k, v in self._sessions.items() if v > now}
                 sid = secrets.token_urlsafe(32)
-                self._sessions[sid] = now + SESSION_SECONDS
+                self._sessions[self._key(sid)] = now + SESSION_SECONDS
+                self._save_sessions()
                 return sid
             fails += 1
             self._fails[ip] = (0, now + LOGIN_LOCK_SECONDS) if fails >= LOGIN_FAILS else (fails, 0.0)
@@ -139,11 +172,12 @@ class AdminService:
 
     def valid_session(self, sid: str | None) -> bool:
         with self._lock:
-            return bool(sid) and self._sessions.get(sid, 0) > time.time()
+            return bool(sid) and self._sessions.get(self._key(sid), 0) > time.time()
 
     def logout(self, sid: str | None) -> None:
         with self._lock:
-            self._sessions.pop(sid or "", None)
+            if sid and self._sessions.pop(self._key(sid), None) is not None:
+                self._save_sessions()
 
     # ── state shown on the page ─────────────────────────────────────────────
 

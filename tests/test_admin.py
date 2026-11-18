@@ -1,4 +1,7 @@
 """The admin page: security, secrets, live changes. The server is real (an ephemeral port), nothing goes out."""
+import json
+import tempfile
+from pathlib import Path
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
@@ -18,7 +21,7 @@ TOKEN = "correct horse battery"
 def make_env(**overrides) -> Settings:
     base = dict(signal_service="127.0.0.1:1", phone_number="+33612345678", openrouter_api_key="sk-or-secret-0123456789",
                 local_base_url="http://127.0.0.1:8089/v1", chat_model="m", bot_name="Sig", bot_aliases=["sigsig"],
-                admin_token=TOKEN, admin_host="127.0.0.1", admin_port=0)
+                admin_token=TOKEN, admin_host="127.0.0.1", admin_port=0, data_dir=Path(tempfile.mkdtemp(prefix="admin-test-")))
     return Settings(**{**base, **overrides})
 
 
@@ -423,3 +426,20 @@ def test_app_files_make_the_page_installable(admin):
     assert c.get("/sw.js").status_code == 200
     page = c.get("/").text
     assert 'rel="manifest"' in page and 'serviceWorker' in page
+
+
+def test_session_survives_a_restart_of_the_bot(admin):
+    """The phone app was signed out by every restart: sessions are kept (hashed) in data_dir."""
+    c = client(admin)
+    assert c.get("/api/state").status_code == 200
+    f = Path(admin.env_.data_dir) / "admin_sessions.json"
+    saved = json.loads(f.read_text())
+    assert len(saved) == 1 and all(len(k) == 64 for k in saved)          # hashes only, never the cookie itself
+    assert oct(f.stat().st_mode & 0o777) == "0o600"
+    cookie = [v for k, v in c.cookies.items()][0]
+    assert cookie not in f.read_text()
+    again = AdminService(admin.live_, admin.env_, admin.store_, admin.llm_, admin.handler_)   # the bot restarted
+    assert again.valid_session(cookie)
+    assert not again.valid_session("forged")
+    again.logout(cookie)
+    assert not AdminService(admin.live_, admin.env_, admin.store_, admin.llm_, admin.handler_).valid_session(cookie)
