@@ -230,7 +230,7 @@ dialog.modal::backdrop{background:rgba(0,0,0,.5);animation:fade .18s ease}
   .btn.sm{padding:8px 14px;font-size:14px}
   .seg button{min-height:42px}
   .meta{row-gap:10px}
-  .meta button{padding:13px 4px;margin:0 -4px}
+  .meta button{padding:13px 4px;margin:-13px -4px}
   .sw input{top:-8px;left:-6px;width:calc(100% + 12px);height:calc(100% + 16px)}
   input:not([type=checkbox]),textarea,select{font-size:16px}
   input:not([type=checkbox]),select{min-height:44px}
@@ -544,7 +544,7 @@ function pageOverview() {
     statCard("En ligne depuis", duration(st.uptime_seconds), "Le bot s'appelle « " + st.bot_name + " »")));
   const missing = S.tools.filter(t => !t.locked && !t.working && t.enabled && t.reason);
   out.push(h("div", { class: "card" }, h("h3", null, "Outils"), h("p", { class: "lead" }, "Ce que le bot sait faire en ce moment (en gris : éteint). Touche un outil pour l'ouvrir."),
-    h("div", { class: "row", style: "gap:10px 8px;margin-top:12px" }, S.tools.map(t => h("button", { class: "pill pill-btn " + (t.locked || t.working ? "ok" : t.enabled ? "warn" : "idle"), type: "button", onclick: () => openTool(t.name) }, t.label))),
+    h("div", { class: "row", style: "gap:12px 8px;margin-top:12px" }, S.tools.map(t => h("button", { class: "pill pill-btn " + (t.locked || t.working ? "ok" : t.enabled ? "warn" : "idle"), type: "button", onclick: () => openTool(t.name) }, t.label))),
     missing.length ? h("div", { style: "display:grid;gap:4px;margin-top:12px" }, missing.map(t => h("p", { class: "help" }, h("b", { style: "color:var(--warn);font-weight:600" }, t.label + " : "), t.reason))) : null));
   return out;
 }
