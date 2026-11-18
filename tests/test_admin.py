@@ -266,6 +266,24 @@ def test_signal_status_when_signal_cli_is_down(admin):
     assert client(admin).get("/api/signal").json()["reachable"] is False
 
 
+@pytest.mark.parametrize("accounts", [
+    ["+33612345678"],                                                  # older signal-cli-rest-api: plain numbers
+    [{"number": "+33612345678", "aci": "00000000-0000-0000-0000-000000000000"}],  # newer: one object per account
+])
+def test_signal_status_sees_the_linked_number_in_both_formats(admin, monkeypatch, accounts):
+    def fake_get(url, **k):
+        return httpx.Response(200, json=accounts if url.endswith("/v1/accounts") else {}, request=httpx.Request("GET", url))
+    monkeypatch.setattr("llmbot.admin.httpx.get", fake_get)
+    st = admin.signal_status()
+    assert st["reachable"] is True and st["registered"] is True and st["accounts"] == ["+33612345678"]
+
+
+def test_signal_status_says_unlinked_when_the_number_is_missing(admin, monkeypatch):
+    monkeypatch.setattr("llmbot.admin.httpx.get", lambda url, **k: httpx.Response(
+        200, json=[{"number": "+33700000000"}] if url.endswith("/v1/accounts") else {}, request=httpx.Request("GET", url)))
+    assert admin.signal_status()["registered"] is False
+
+
 # ── pieces ──────────────────────────────────────────────────────────────────
 
 def test_live_settings_replace_the_snapshot_as_a_whole():

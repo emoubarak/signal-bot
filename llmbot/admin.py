@@ -350,7 +350,9 @@ class AdminService:
             out["reachable"] = httpx.get(base + "/v1/health", timeout=3).is_success
             if out["reachable"]:
                 acc = httpx.get(base + "/v1/accounts", timeout=3).json()
-                out["accounts"] = [a if isinstance(a, str) else str(a) for a in acc] if isinstance(acc, list) else []
+                # older signal-cli-rest-api lists numbers, newer ones objects {"number": …, "aci": …}
+                numbers = [a.get("number") if isinstance(a, dict) else a for a in (acc if isinstance(acc, list) else [])]
+                out["accounts"] = [n for n in numbers if isinstance(n, str) and n]
                 out["registered"] = s.phone_number in out["accounts"]
         except (httpx.HTTPError, ValueError):
             pass

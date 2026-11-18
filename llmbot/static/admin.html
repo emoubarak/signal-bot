@@ -2,34 +2,36 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="robots" content="noindex">
 <title>Réglages du bot</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<meta name="theme-color" content="#0a84ff">
+<!-- the phone's status bar takes the page's background; the in-page theme switch rewrites both (syncThemeColor) -->
+<meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
 <style>
 :root{color-scheme:light;
 --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;
 --font-d:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",system-ui,sans-serif;
 --font-m:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
 --r:18px;--r-s:10px;--ease:cubic-bezier(.23,1,.32,1);
---bg:#f5f5f7;--zone:rgba(118,118,128,.08);--side:rgba(242,242,247,.78);--bg2:rgba(118,118,128,.12);--card:#ffffff;--card2:#fafafc;
+--bg:#f5f5f7;--elev:#ffffff;--zone:rgba(118,118,128,.08);--side:rgba(242,242,247,.78);--bg2:rgba(118,118,128,.12);--card:#ffffff;--card2:#fafafc;
 --fg:#1d1d1f;--mut:#6e6e73;--line:rgba(0,0,0,.07);--line2:rgba(0,0,0,.12);
 --acc:#0071e3;--accfg:#ffffff;--accsoft:rgba(0,113,227,.10);--acc2:#0077ed;
 --shadow:0 1px 2px rgba(0,0,0,.04),0 2px 12px rgba(0,0,0,.04);--shadow2:0 2px 6px rgba(0,0,0,.05),0 12px 32px rgba(0,0,0,.08);
 --ok:#248a3d;--okb:rgba(52,199,89,.14);--warn:#c45f00;--warnb:rgba(255,149,0,.16);--bad:#d70015;--badb:rgba(255,59,48,.12);
 --run:#0066cc;--runb:rgba(0,122,255,.12);--idle:#6e6e73;--idleb:rgba(118,118,128,.12)}
 :root[data-theme="dark"]{color-scheme:dark;
---bg:#000000;--zone:rgba(118,118,128,.16);--side:rgba(28,28,30,.72);--bg2:rgba(118,118,128,.24);--card:#1c1c1e;--card2:#242426;
+--bg:#000000;--elev:#2c2c2e;--zone:rgba(118,118,128,.16);--side:rgba(28,28,30,.72);--bg2:rgba(118,118,128,.24);--card:#1c1c1e;--card2:#242426;
 --fg:#f5f5f7;--mut:#98989d;--line:rgba(255,255,255,.08);--line2:rgba(255,255,255,.14);
 --acc:#0a84ff;--accfg:#ffffff;--accsoft:rgba(10,132,255,.18);--acc2:#3395ff;
 --shadow:0 0 0 .5px rgba(255,255,255,.06),0 2px 12px rgba(0,0,0,.4);--shadow2:0 0 0 .5px rgba(255,255,255,.08),0 16px 40px rgba(0,0,0,.6);
 --ok:#30d158;--okb:rgba(48,209,88,.16);--warn:#ff9f0a;--warnb:rgba(255,159,10,.18);--bad:#ff453a;--badb:rgba(255,69,58,.18);
 --run:#64d2ff;--runb:rgba(100,210,255,.15);--idle:#98989d;--idleb:rgba(118,118,128,.24)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;
---bg:#000000;--zone:rgba(118,118,128,.16);--side:rgba(28,28,30,.72);--bg2:rgba(118,118,128,.24);--card:#1c1c1e;--card2:#242426;
+--bg:#000000;--elev:#2c2c2e;--zone:rgba(118,118,128,.16);--side:rgba(28,28,30,.72);--bg2:rgba(118,118,128,.24);--card:#1c1c1e;--card2:#242426;
 --fg:#f5f5f7;--mut:#98989d;--line:rgba(255,255,255,.08);--line2:rgba(255,255,255,.14);
 --acc:#0a84ff;--accfg:#ffffff;--accsoft:rgba(10,132,255,.18);--acc2:#3395ff;
 --shadow:0 0 0 .5px rgba(255,255,255,.06),0 2px 12px rgba(0,0,0,.4);--shadow2:0 0 0 .5px rgba(255,255,255,.08),0 16px 40px rgba(0,0,0,.6);
@@ -55,6 +57,12 @@ a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
 .pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
 .pill.idle{background:var(--idleb);color:var(--idle)}.pill.run{background:var(--runb);color:var(--run)}
 .pill.warn{background:var(--warnb);color:var(--warn)}.pill.ok{background:var(--okb);color:var(--ok)}.pill.bad{background:var(--badb);color:var(--bad)}
+/* a pill that opens its tool: 32 px drawn, 44 px to the finger (the zone overflows into the gaps) */
+.pill-btn{border:0;font-family:inherit;min-height:32px;padding:4px 12px 4px 10px;cursor:pointer;position:relative}
+.pill-btn::after{content:"";position:absolute;inset:-6px -4px}
+@media (hover:hover) and (pointer:fine){.pill-btn:hover{box-shadow:inset 0 0 0 1px currentColor}}
+.tool.flash{animation:flash 1.6s ease}
+@keyframes flash{0%,45%{background:var(--accsoft)}100%{background:transparent}}
 
 .btn{border:0;background:var(--bg2);color:var(--fg);border-radius:var(--r-s);padding:8px 15px;font:inherit;font-size:14px;font-weight:600;letter-spacing:-.01em;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap;
   transition:transform .16s var(--ease),background-color .2s ease,color .2s ease}
@@ -63,12 +71,13 @@ a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
 .btn.ghost{background:transparent;color:var(--mut)}
 .btn.bad{background:var(--badb);color:var(--bad)}
 .btn.sm{padding:5px 11px;font-size:13px}
+.btn.icon-btn{width:44px;height:44px;padding:0;border-radius:50%}.btn.icon-btn .ic svg{width:21px;height:21px}
 .btn[disabled]{opacity:.38;cursor:default;transform:none}
 @media (hover:hover) and (pointer:fine){.btn:hover{background:color-mix(in srgb,var(--bg2) 100%,var(--fg) 7%)}.btn.pri:hover{background:var(--acc2)}
   .btn.ghost:hover{background:var(--bg2);color:var(--fg)}.btn.bad:hover{background:color-mix(in srgb,var(--badb) 100%,var(--bad) 12%)}}
 :focus-visible{outline:3px solid color-mix(in srgb,var(--acc) 55%,transparent);outline-offset:2px}
 
-input[type=text],input[type=password],input[type=number],textarea,select{width:100%;border:1px solid transparent;background:var(--zone);color:var(--fg);border-radius:var(--r-s);
+input[type=text],input[type=password],input[type=number],input[type=url],input[type=tel],textarea,select{width:100%;border:1px solid transparent;background:var(--zone);color:var(--fg);border-radius:var(--r-s);
   padding:9px 12px;font:inherit;font-size:14px;letter-spacing:-.01em;transition:box-shadow .2s ease,background-color .2s ease}
 textarea{resize:vertical;min-height:64px;line-height:1.4}
 input:focus,select:focus,textarea:focus{outline:0;background:var(--card);box-shadow:0 0 0 4px color-mix(in srgb,var(--acc) 35%,transparent)}
@@ -90,7 +99,7 @@ input::placeholder,textarea::placeholder{color:var(--mut);opacity:.8}
 
 /* interrupteur */
 .sw{position:relative;width:46px;height:28px;flex:none}
-.sw input{position:absolute;inset:0;opacity:.011;margin:0;cursor:pointer;width:100%;height:100%;z-index:1}
+.sw input{position:absolute;inset:0;opacity:.011;margin:0;cursor:pointer;width:100%;height:100%;z-index:1;-webkit-appearance:none;appearance:none;background:transparent;border:0}
 .sw i{position:absolute;inset:0;border-radius:99px;background:var(--bg2);transition:background-color .2s ease}
 .sw i::after{content:"";position:absolute;top:2px;left:2px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .22s var(--ease)}
 .sw input:checked+i{background:var(--ok)}
@@ -99,17 +108,22 @@ input::placeholder,textarea::placeholder{color:var(--mut);opacity:.8}
 .sw input:disabled{cursor:default}.sw input:disabled+i{opacity:.45}
 
 /* mise en page */
-.app{display:grid;grid-template-columns:248px minmax(0,1fr);min-height:100vh}
-.side{position:sticky;top:0;height:100vh;padding:22px 14px;display:flex;flex-direction:column;gap:6px;background:var(--side);backdrop-filter:blur(30px) saturate(180%);-webkit-backdrop-filter:blur(30px) saturate(180%);box-shadow:inset -.5px 0 0 var(--line2)}
+.app{display:grid;grid-template-columns:248px minmax(0,1fr);min-height:100vh;min-height:100dvh}
+.side{position:sticky;top:0;height:100vh;height:100dvh;padding:22px 14px;display:flex;flex-direction:column;gap:6px;background:var(--side);backdrop-filter:blur(30px) saturate(180%);-webkit-backdrop-filter:blur(30px) saturate(180%);box-shadow:inset -.5px 0 0 var(--line2)}
 .side .brand{padding:4px 10px 16px;font-family:var(--font-d);font-size:17px;font-weight:700;letter-spacing:-.02em;display:flex;align-items:center;gap:10px}
 .side .brand b{width:30px;height:30px;border-radius:9px;background:var(--acc);color:var(--accfg);display:grid;place-items:center;font-size:16px}
 .side nav{display:grid;gap:2px}
-.side nav button{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;color:var(--fg);font-size:14px;font-weight:500;cursor:pointer;transition:background-color .15s ease}
+.side nav button{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:10px;padding:8px 10px;min-height:36px;border-radius:8px;color:var(--fg);font-size:14px;font-weight:500;cursor:pointer;transition:background-color .15s ease}
 .side nav button:focus-visible{outline:3px solid color-mix(in srgb,var(--acc) 55%,transparent);outline-offset:1px}
 .side nav button.on{background:var(--bg2);font-weight:600}
 @media (hover:hover) and (pointer:fine){.side nav button:hover{background:var(--zone)}}
 .side nav .badge{margin-left:auto}
+.ic{display:inline-grid;place-items:center;flex:none}.ic svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.side nav button .ic{color:var(--acc)}
+.side nav .lbl-s,.head-acts{display:none}
 .side .foot{margin-top:auto;display:grid;gap:6px}
+.install-slot:empty{display:none}
+@media (display-mode:standalone){.install-slot{display:none}}
 main{padding:34px 36px 140px;max-width:880px;width:100%}
 .head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px;flex-wrap:wrap}
 .head p{color:var(--mut);margin-top:6px;max-width:56ch}
@@ -138,6 +152,7 @@ section.page.on{display:grid}
 .tool .top{display:flex;gap:14px;align-items:center}
 .tool .txt{flex:1;min-width:0}
 .tool .name{font-weight:600;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.tool .name .pill{white-space:normal}
 .tool .help{margin-top:1px}
 .tool .try{display:grid;gap:8px;padding:12px;border-radius:var(--r-s);background:var(--zone)}
 .tool pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:12.5px/1.45 var(--font-m);letter-spacing:0;max-height:240px;overflow:auto}
@@ -151,34 +166,81 @@ section.page.on{display:grid}
 .savebar .in .txt{font-weight:600;font-size:14px}
 .savebar .in .err{color:var(--bad);font-size:13px;font-weight:500}
 
-.toast{position:fixed;right:20px;top:20px;z-index:20;display:grid;gap:8px;pointer-events:none}
+.toast{position:fixed;right:20px;top:calc(20px + env(safe-area-inset-top));z-index:20;display:grid;gap:8px;pointer-events:none}
 .toast div{background:var(--card);box-shadow:var(--shadow2);border-radius:12px;padding:11px 16px;font-size:14px;font-weight:500;max-width:360px;animation:in .22s var(--ease)}
 .toast .ok{border-left:4px solid var(--ok)}.toast .bad{border-left:4px solid var(--bad)}
 
-.modal{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.4);display:grid;place-items:center;padding:16px;animation:fade .18s ease}
+/* fenêtres : <dialog> natif (Échap et le geste retour d'Android la ferment, le focus revient au bouton) */
+dialog.modal{border:0;padding:0;background:transparent;color:var(--fg);width:min(420px,calc(100% - 32px));max-width:none;max-height:none;overflow:visible}
+dialog.modal::backdrop{background:rgba(0,0,0,.5);animation:fade .18s ease}
 @keyframes fade{from{opacity:0}to{opacity:1}}
-.modal .box{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow2);padding:24px;max-width:420px;width:100%;display:grid;gap:14px;animation:pop .22s var(--ease)}
+.modal .box{background:var(--elev);border-radius:var(--r);box-shadow:var(--shadow2);padding:24px;display:grid;gap:14px;animation:pop .22s var(--ease);
+  max-height:calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));overflow:auto;overscroll-behavior:contain}
 @keyframes pop{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
 .modal .box img{width:100%;max-width:300px;justify-self:center;border-radius:10px;background:#fff;padding:8px}
 .modal .acts{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
 
 /* connexion */
-.login{min-height:100vh;display:grid;place-items:center;padding:20px}
+.login{min-height:100vh;min-height:100dvh;display:grid;place-items:center;padding:calc(20px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom))}
 .login .card{width:100%;max-width:380px;display:grid;gap:16px;padding:28px}
 
 @media (max-width:820px){
+  /* téléphone : barre d'onglets en bas (à portée du pouce), contenu sous la barre d'état */
   .app{grid-template-columns:1fr}
-  .side{position:static;height:auto;flex-direction:row;align-items:flex-start;gap:8px;padding:10px 12px;box-shadow:inset 0 -.5px 0 var(--line2)}
-  .side .brand{display:none}
-  .side nav{display:flex;gap:2px 4px;flex-wrap:wrap;flex:1}
-  .side nav button{white-space:nowrap;padding:7px 12px}
-  .side .foot{margin:0;display:flex}
-  .side .foot .btn{padding:7px 10px}
-  main{padding:22px 16px 150px}
+  .side{position:fixed;left:0;right:0;bottom:0;top:auto;height:auto;z-index:6;flex-direction:row;gap:0;
+    padding:0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);box-shadow:inset 0 .5px 0 var(--line2)}
+  .side .brand,.side .foot{display:none}
+  .side nav{display:flex;gap:0;flex:1}
+  .side nav button{flex:1 1 auto;min-width:0;position:relative;flex-direction:column;justify-content:center;gap:3px;min-height:58px;padding:6px 2px 5px;border-radius:0;
+    color:var(--mut);font-size:12px;font-weight:500;letter-spacing:-.01em;text-align:center;-webkit-tap-highlight-color:transparent}
+  .side nav button .ic{color:inherit}
+  .side nav button .ic svg{width:24px;height:24px}
+  .side nav button.on{background:transparent;color:var(--acc);font-weight:600}
+  .side nav .lbl{display:none}.side nav .lbl-s{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .side nav .badge{position:absolute;top:7px;left:calc(50% + 9px);margin:0;width:10px;height:10px;padding:0;font-size:0;background:var(--warn);box-shadow:0 0 0 2px var(--bg)}
+  .side nav .badge::before{display:none}
+  main{padding:calc(14px + env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) calc(84px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+  .app.dirty main{padding-bottom:calc(170px + env(safe-area-inset-bottom))}
+  /* titre et boutons sur une ligne, les phrases d'aide sur toute la largeur dessous */
+  .head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:0 12px;align-items:center;margin-bottom:16px}
+  .head>div:first-child{display:contents}
+  .head>div:first-child>p{grid-column:1/-1}
+  .head-acts{display:flex;gap:8px;align-items:center;grid-row:1;grid-column:2}
   h1{font-size:28px}
-  .savebar{left:0;padding:10px 12px calc(10px + env(safe-area-inset-bottom))}
+  .savebar{left:0;bottom:calc(58px + env(safe-area-inset-bottom));padding:8px max(10px,env(safe-area-inset-right)) 8px max(10px,env(safe-area-inset-left))}
+  .savebar .in{padding:8px 8px 8px 14px;gap:10px}
+  .savebar .in .txt{font-size:13px;line-height:1.3}
   .grid2{grid-template-columns:1fr}
-  .tool .top{align-items:flex-start}
+  .cards3{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .cards3>.card:first-child{grid-column:1/-1}
+  .card{padding:18px}
+  .card.stat{padding:14px 16px}
+  .stat .v{font-size:20px}
+  .stat .pill{white-space:normal}
+  .tool{padding:14px 16px}
+  .tools h4{padding:12px 16px 6px}
+  .tool .top{align-items:flex-start;gap:10px}
+  .toast{left:12px;right:12px;justify-items:center}
+  .toast div{max-width:100%}
+  html{scroll-padding-bottom:calc(170px + env(safe-area-inset-bottom))}
+}
+/* écran tactile : zones de toucher de 44 px, texte des champs à 16 px (pas de zoom au focus) */
+@media (pointer:coarse){
+  .btn,.btn.sm{min-height:44px}
+  .btn.sm{padding:8px 14px;font-size:14px}
+  .seg button{min-height:42px}
+  .meta{row-gap:10px}
+  .meta button{padding:13px 4px;margin:0 -4px}
+  .sw input{top:-8px;left:-6px;width:calc(100% + 12px);height:calc(100% + 16px)}
+  input:not([type=checkbox]),textarea,select{font-size:16px}
+  input:not([type=checkbox]),select{min-height:44px}
+  .row{gap:12px}
+}
+@media (max-width:820px) and (pointer:coarse){
+  /* clavier ouvert : la barre d'onglets s'efface pour laisser la place au champ et à « Enregistrer » */
+  .kb .side{display:none}
+  .kb .savebar{bottom:0}
+  .kb .app.dirty main,.kb main{padding-bottom:110px}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 @media (prefers-reduced-transparency:reduce){.side,.savebar .in{backdrop-filter:none;-webkit-backdrop-filter:none}}
@@ -191,26 +253,27 @@ section.page.on{display:grid}
 "use strict";
 // installable as an app (Brave/Chrome: "Installer"); the worker caches nothing
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
-// "Installer l'appli": a button outside the page's own rendering (login screen included), shown
-// only while the browser offers to install the page (HTTPS, not installed yet)
+// "Installer l'appli": shown only while the browser offers to install the page (HTTPS, not installed
+// yet), in the page's own slots (sidebar, phone header, login card) so it never covers another button
 let installPrompt = null;
-function installButton(show) {
-  let b = document.getElementById("install");
-  if (!show) { if (b) b.remove(); return; }
-  if (b) return;
-  b = document.createElement("button");
-  b.id = "install"; b.className = "btn sm"; b.type = "button"; b.textContent = "Installer l'appli";
-  b.style.cssText = "position:fixed;top:12px;right:16px;z-index:50";
-  b.addEventListener("click", async () => {
-    if (!installPrompt) return;
-    const p = installPrompt;
-    await p.prompt();
-    if ((await p.userChoice).outcome === "accepted") { installPrompt = null; installButton(false); }
-  });
-  document.body.append(b);
+async function install() {
+  if (!installPrompt) return;
+  const p = installPrompt;
+  await p.prompt();
+  if ((await p.userChoice).outcome === "accepted") { installPrompt = null; fillInstallSlots(); }
 }
-window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; installButton(true); });
-window.addEventListener("appinstalled", () => { installPrompt = null; installButton(false); });
+function fillInstallSlots() {
+  for (const slot of document.querySelectorAll(".install-slot")) {
+    slot.replaceChildren();
+    if (installPrompt) { const b = document.createElement("button"); b.className = "btn sm"; b.type = "button"; b.textContent = "Installer l'appli"; b.addEventListener("click", install); slot.append(b); }
+  }
+}
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; fillInstallSlots(); });
+window.addEventListener("appinstalled", () => { installPrompt = null; fillInstallSlots(); });
+// phone keyboard open (a text field has the focus): the bottom tab bar steps aside (CSS .kb)
+const typing = el => el && el.matches && el.matches("input:not([type=checkbox]),textarea");
+document.addEventListener("focusin", e => { if (typing(e.target)) document.documentElement.classList.add("kb"); });
+document.addEventListener("focusout", () => setTimeout(() => { if (!typing(document.activeElement)) document.documentElement.classList.remove("kb"); }, 60));
 /* ---------- petits outils ---------- */
 const $ = (s, el = document) => el.querySelector(s);
 function h(tag, props, ...kids) {
@@ -252,25 +315,41 @@ async function api(method, path, body) {
   if (!r.ok) throw new Error(data.error || "Erreur " + r.status);
   return data;
 }
+// a native modal <dialog>: Escape and Android's back gesture close it, focus goes back to the button
+// that opened it, a tap on the dimmed background closes it too
+function openDialog(title, box, onClose) {
+  const d = h("dialog", { class: "modal", "aria-label": title }, box);
+  d.addEventListener("click", e => { if (e.target === d) d.close(); });
+  d.addEventListener("close", () => { d.remove(); if (onClose) onClose(); });
+  document.body.append(d);
+  d.showModal();
+  return d;
+}
 function confirmBox(title, text, okLabel, danger) {
   return new Promise(resolve => {
-    const done = v => { m.remove(); resolve(v); };
-    const m = h("div", { class: "modal", role: "dialog", "aria-modal": "true", onclick: e => { if (e.target === m) done(false); } },
-      h("div", { class: "box" }, h("h3", null, title), h("p", { class: "muted" }, text),
-        h("div", { class: "acts" }, h("button", { class: "btn", onclick: () => done(false) }, "Annuler"),
-          h("button", { class: "btn " + (danger ? "bad" : "pri"), onclick: () => done(true) }, okLabel))));
-    document.body.append(m);
-    $(".acts .btn", m).focus();
+    let ok = false;
+    const cancel = h("button", { class: "btn", type: "button", onclick: () => d.close() }, "Annuler");
+    const d = openDialog(title, h("div", { class: "box" }, h("h3", null, title), h("p", { class: "muted" }, text),
+      h("div", { class: "acts" }, cancel, h("button", { class: "btn " + (danger ? "bad" : "pri"), type: "button", onclick: () => { ok = true; d.close(); } }, okLabel))),
+      () => resolve(ok));
+    cancel.focus();
   });
 }
 
 /* ---------- thème ---------- */
+const BAR = { light: "#f5f5f7", dark: "#000000" };   // the page background, for the phone's status bar
+function syncThemeColor() {
+  const t = document.documentElement.dataset.theme;
+  for (const m of document.querySelectorAll('meta[name="theme-color"]')) m.content = BAR[t || (m.media.includes("dark") ? "dark" : "light")];
+}
 try { const t = localStorage.getItem("admin-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* stockage bloqué */ }
+syncThemeColor();
 function toggleTheme() {
   const cur = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme:dark)").matches ? "dark" : "light");
   const next = cur === "dark" ? "light" : "dark";
   document.documentElement.dataset.theme = next;
   try { localStorage.setItem("admin-theme", next); } catch (e) { /* ignore */ }
+  syncThemeColor();
 }
 
 /* ---------- libellés des réglages ---------- */
@@ -305,6 +384,21 @@ const TRY = {
   make_meme: ["Deux légendes séparées par une virgule", "le lundi matin, le vendredi soir"],
   pick_random: ["Des choix séparés par des virgules", "pizza, sushi, burger"],
 };
+
+/* ---------- icônes (Lucide, licence ISC) ---------- */
+const ICONS = {
+  overview: '<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
+  provider: '<rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/>',
+  tools: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+  account: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+  behavior: '<path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/>',
+  theme: '<circle cx="12" cy="12" r="9"/><path d="M12 3v18a9 9 0 0 0 0-18Z" fill="currentColor"/>',
+};
+function icon(name) {
+  const el = h("span", { class: "ic", "aria-hidden": "true" });
+  el.innerHTML = '<svg viewBox="0 0 24 24">' + ICONS[name] + "</svg>";
+  return el;
+}
 
 /* ---------- état ---------- */
 let S = null;          // état du serveur
@@ -351,7 +445,7 @@ function buildBody() {
 function showLogin(msg) {
   const root = $("#root");
   root.replaceChildren();
-  const pw = h("input", { type: "password", autocomplete: "current-password", id: "pw", placeholder: "Mot de passe" });
+  const pw = h("input", { type: "password", autocomplete: "current-password", id: "pw", placeholder: "Mot de passe", enterkeyhint: "go", autocapitalize: "off", spellcheck: false });
   const err = h("p", { class: "help", style: "color:var(--bad)" }, msg || "");
   const go = async () => {
     err.textContent = "";
@@ -362,7 +456,8 @@ function showLogin(msg) {
   root.append(h("div", { class: "login" }, h("div", { class: "card" },
     h("div", null, h("h2", null, "Réglages du bot"), h("p", { class: "help", style: "margin-top:4px" }, "Entre le mot de passe d'administration (ADMIN_TOKEN du fichier .env).")),
     h("div", { class: "f" }, h("label", { for: "pw" }, "Mot de passe"), pw), err,
-    h("button", { class: "btn pri", onclick: go }, "Se connecter"))));
+    h("button", { class: "btn pri", onclick: go }, "Se connecter"), h("div", { class: "install-slot" }))));
+  fillInstallSlots();
   pw.focus();
 }
 
@@ -379,18 +474,26 @@ function meta(key) {
   }
   return bits.length ? h("div", { class: "meta" }, bits) : null;
 }
+// the phone keyboard each value needs: URL keys for addresses, a dial pad for numbers, no auto-capitals on technical values
+const KEYBOARD = {
+  local_base_url: { type: "url", inputmode: "url" }, transcribe_base_url: { type: "url", inputmode: "url" },
+  phone_number: { type: "tel", inputmode: "tel" }, owner_number: { type: "tel", inputmode: "tel" },
+  bot_name: { autocapitalize: "sentences" },
+};
 function textField(key, opts = {}) {
   const [label, help, ph] = DEF[key];
   const f = S.fields[key];
   const id = "f-" + key;
   let el;
   if (f.kind === "list" || f.kind === "phones") {
-    el = h("textarea", { id, rows: 3, placeholder: ph || "", value: (D.values[key] || []).join("\n"),
+    el = h("textarea", { id, rows: 3, placeholder: ph || "", value: (D.values[key] || []).join("\n"), spellcheck: false, autocapitalize: key === "bot_aliases" ? "sentences" : "off",
       oninput: e => { D.values[key] = e.target.value.split(/[\n,]/).map(x => x.trim()).filter(Boolean); D.reset.delete(key); update(); } });
   } else if (f.kind === "int") {
-    el = h("input", { id, type: "number", min: 0, value: D.values[key], oninput: e => { D.values[key] = e.target.value === "" ? "" : Number(e.target.value); D.reset.delete(key); update(); } });
+    el = h("input", { id, type: "number", min: 0, inputmode: "numeric", enterkeyhint: "done", value: D.values[key], oninput: e => { D.values[key] = e.target.value === "" ? "" : Number(e.target.value); D.reset.delete(key); update(); } });
   } else {
-    el = h("input", { id, type: "text", autocomplete: "off", spellcheck: false, placeholder: ph || "", value: D.values[key] ?? "", list: opts.list || undefined,
+    const kb = KEYBOARD[key] || {};
+    el = h("input", { id, type: kb.type || "text", inputmode: kb.inputmode, autocomplete: "off", autocapitalize: kb.autocapitalize || "off", spellcheck: false, enterkeyhint: "done",
+      placeholder: ph || "", value: D.values[key] ?? "", list: opts.list || undefined,
       oninput: e => { D.values[key] = e.target.value; D.reset.delete(key); if (key === "local_base_url") lastLocalUrl = e.target.value; update(); } });
   }
   return h("div", { class: "f" }, h("label", { for: id }, label), el, h("div", { class: "help" }, help), meta(key));
@@ -407,7 +510,7 @@ function secretField(key, opts = {}) {
   const f = S.fields[key];
   const id = "f-" + key;
   const cleared = D.secretClear.has(key);
-  const box = h("input", { id, type: "password", autocomplete: "new-password", spellcheck: false, placeholder: "Colle la clé ici", value: D.secretNew[key] || "",
+  const box = h("input", { id, type: "password", autocomplete: "new-password", autocapitalize: "off", spellcheck: false, enterkeyhint: "done", placeholder: "Colle la clé ici", value: D.secretNew[key] || "",
     oninput: e => { D.secretNew[key] = e.target.value; D.secretClear.delete(key); D.reset.delete(key); update(); } });
   let status;
   if (cleared) status = h("span", { class: "pill warn" }, "Sera supprimée");
@@ -435,20 +538,22 @@ function pageOverview() {
     h("button", { class: "btn sm", onclick: restart }, "Redémarrer maintenant")));
   out.push(h("div", { class: "cards3" },
     statCard("Fournisseur", st.provider === "local" ? "Serveur local" : "OpenRouter", st.chat_model),
-    statCard("Signal", sigPill, sig ? (sig.phone_number || "—") : "", null),
+    statCard("Signal", sigPill, sig ? (sig.phone_number || "Aucun numéro") : "", null),
     statCard("Dans la base", fr.format(st.messages) + " messages", fr.format(st.chats) + " conversation(s) · dernier : " + ago(st.last_message_ts)),
     statCard("Coût du bot", money(st.cost_24h), "sur 24 h · " + money(st.cost_30d) + " sur 30 jours"),
     statCard("En ligne depuis", duration(st.uptime_seconds), "Le bot s'appelle « " + st.bot_name + " »")));
-  out.push(h("div", { class: "card" }, h("h3", null, "Outils"), h("p", { class: "lead" }, "Ce que le bot sait faire en ce moment."),
-    h("div", { class: "row", style: "gap:8px" }, S.tools.map(t => h("span", { class: "pill " + (t.locked || t.working ? "ok" : t.enabled ? "warn" : "idle"), title: t.reason || "" }, t.label)))));
+  const missing = S.tools.filter(t => !t.locked && !t.working && t.enabled && t.reason);
+  out.push(h("div", { class: "card" }, h("h3", null, "Outils"), h("p", { class: "lead" }, "Ce que le bot sait faire en ce moment (en gris : éteint). Touche un outil pour l'ouvrir."),
+    h("div", { class: "row", style: "gap:10px 8px;margin-top:12px" }, S.tools.map(t => h("button", { class: "pill pill-btn " + (t.locked || t.working ? "ok" : t.enabled ? "warn" : "idle"), type: "button", onclick: () => openTool(t.name) }, t.label))),
+    missing.length ? h("div", { style: "display:grid;gap:4px;margin-top:12px" }, missing.map(t => h("p", { class: "help" }, h("b", { style: "color:var(--warn);font-weight:600" }, t.label + " : "), t.reason))) : null));
   return out;
 }
 
 function pageProvider() {
   const local = !!(D.values.local_base_url);
   const mode = h("div", { class: "seg", role: "tablist" },
-    h("button", { class: local ? "on" : "", role: "tab", "aria-selected": local, onclick: () => { D.values.local_base_url = lastLocalUrl || "http://127.0.0.1:8089/v1"; D.reset.delete("local_base_url"); providerMsg = null; render(); } }, "Serveur local"),
-    h("button", { class: local ? "" : "on", role: "tab", "aria-selected": !local, onclick: () => { if (D.values.local_base_url) lastLocalUrl = D.values.local_base_url; D.values.local_base_url = ""; D.reset.delete("local_base_url"); providerMsg = null; render(); } }, "OpenRouter"));
+    h("button", { class: local ? "on" : "", role: "tab", "aria-selected": local ? "true" : "false", onclick: () => { D.values.local_base_url = lastLocalUrl || "http://127.0.0.1:8089/v1"; D.reset.delete("local_base_url"); providerMsg = null; render(); } }, "Serveur local"),
+    h("button", { class: local ? "" : "on", role: "tab", "aria-selected": local ? "false" : "true", onclick: () => { if (D.values.local_base_url) lastLocalUrl = D.values.local_base_url; D.values.local_base_url = ""; D.reset.delete("local_base_url"); providerMsg = null; render(); } }, "OpenRouter"));
   const testBtn = h("button", { class: "btn sm", type: "button", onclick: testProvider }, "Tester la connexion");
   const msg = providerMsg ? h("span", { class: "pill " + (providerMsg.ok ? "ok" : "bad") }, providerMsg.message) : null;
   const cards = [];
@@ -477,21 +582,33 @@ function toolRow(t) {
     : !on ? h("span", { class: "pill idle" }, "Éteint")
     : t.reason && !S.tools.find(x => x.name === t.name).working ? h("span", { class: "pill warn" }, t.reason)
     : h("span", { class: "pill ok" }, "Actif");
-  const sw = h("span", { class: "sw" }, h("input", { type: "checkbox", role: "switch", checked: on, disabled: t.locked, "aria-label": t.label, onchange: e => { if (e.target.checked) D.tools.delete(t.name); else D.tools.add(t.name); render(); } }), h("i"));
+  const sw = h("span", { class: "sw" }, h("input", { id: "t-" + t.name, type: "checkbox", role: "switch", checked: on, disabled: t.locked, "aria-label": t.label, onchange: e => { if (e.target.checked) D.tools.delete(t.name); else D.tools.add(t.name); render(); } }), h("i"));
   const tr = TRY[t.name];
   const open = tryState[t.name] && tryState[t.name].open;
   const parts = [h("div", { class: "top" }, h("div", { class: "txt" }, h("div", { class: "name" }, t.label, state), h("div", { class: "help" }, t.help)),
-    (tr !== false && !t.locked) ? h("button", { class: "btn sm", type: "button", onclick: () => { tryState[t.name] = { ...(tryState[t.name] || {}), open: !open }; render(); } }, open ? "Fermer" : "Essayer") : null, sw)];
+    (tr !== false && !t.locked) ? h("button", { class: "btn sm", type: "button", "aria-expanded": open ? "true" : "false", onclick: () => { tryState[t.name] = { ...(tryState[t.name] || {}), open: !open }; render(); if (!open) { const i = document.getElementById("try-" + t.name); if (i) i.focus(); } } }, open ? "Fermer" : "Essayer") : null, sw)];
   if (t.name === "send_gif") parts.push(h("div", { class: "keybox" }, secretField("klipy_api_key")));
   if (open) {
     const ts = tryState[t.name];
-    const input = tr ? h("input", { type: "text", placeholder: tr[1], value: ts.text || "", "aria-label": tr[0], oninput: e => { ts.text = e.target.value; },
+    const input = tr ? h("input", { id: "try-" + t.name, type: t.name === "read_page" ? "url" : "text", inputmode: t.name === "read_page" ? "url" : undefined, enterkeyhint: "go", autocomplete: "off", spellcheck: false,
+      placeholder: tr[1], value: ts.text || "", "aria-label": tr[0], oninput: e => { ts.text = e.target.value; },
       onkeydown: e => { if (e.key === "Enter") runTry(t.name); } }) : null;
     parts.push(h("div", { class: "try" }, h("div", { class: "row" }, input ? h("div", { style: "flex:1;min-width:180px" }, input) : null,
-      h("button", { class: "btn sm pri", type: "button", disabled: ts.busy, onclick: () => runTry(t.name) }, ts.busy ? "…" : "Lancer")),
+      h("button", { class: "btn sm pri", type: "button", disabled: ts.busy, onclick: () => runTry(t.name) }, ts.busy ? "En cours…" : "Lancer")),
       ts.result ? h("pre", null, ts.result.text) : null, ts.result && ts.result.gif ? h("img", { src: ts.result.gif, alt: "GIF trouvé" }) : null));
   }
-  return h("div", { class: "tool" }, parts);
+  return h("div", { class: "tool", id: "tool-" + t.name }, parts);
+}
+// from the overview: open the Tools page on that tool, briefly lit up
+function openTool(name) {
+  page = "tools"; saveError = ""; history.replaceState(null, "", "#tools"); render();
+  const row = document.getElementById("tool-" + name);
+  if (!row) return;
+  row.scrollIntoView({ block: "center" });
+  row.classList.add("flash");
+  setTimeout(() => row.classList.remove("flash"), 1600);
+  const target = row.querySelector(".btn") || row.querySelector("input");
+  if (target) target.focus({ preventScroll: true });
 }
 function pageTools() {
   const groups = {};
@@ -534,12 +651,12 @@ function pageBehavior() {
   ];
 }
 
-const PAGES = [
-  ["overview", "Aperçu", "Où en est le bot, en un coup d'œil.", pageOverview],
-  ["provider", "Fournisseur", "Qui écrit les réponses du bot, et avec quelle clé.", pageProvider],
-  ["tools", "Outils", "Ce que le bot a le droit de faire.", pageTools],
-  ["account", "Compte et groupes", "Le numéro Signal, le nom du bot et les groupes où il répond.", pageAccount],
-  ["behavior", "Comportement", "Limites, mémoire et maintenance.", pageBehavior],
+const PAGES = [  // id, title, line under it, page, label in the phone's tab bar
+  ["overview", "Aperçu", "Où en est le bot, en un coup d'œil.", pageOverview, "Aperçu"],
+  ["provider", "Fournisseur", "Qui écrit les réponses du bot, et avec quelle clé.", pageProvider, "Fournisseur"],
+  ["tools", "Outils", "Ce que le bot a le droit de faire.", pageTools, "Outils"],
+  ["account", "Compte et groupes", "Le numéro Signal, le nom du bot et les groupes où il répond.", pageAccount, "Compte"],
+  ["behavior", "Comportement", "Limites, mémoire et maintenance.", pageBehavior, "Comportement"],
 ];
 
 /* ---------- actions ---------- */
@@ -561,12 +678,12 @@ async function runTry(name) {
 }
 async function refreshSignal() { signal = null; render(); try { signal = await api("GET", "/api/signal"); } catch (e) { signal = { reachable: false, service: S.status.signal_service }; } render(); }
 function showQr() {
-  const m = h("div", { class: "modal", role: "dialog", "aria-modal": "true", onclick: e => { if (e.target === m) m.remove(); } },
-    h("div", { class: "box" }, h("h3", null, "Lier un appareil"),
-      h("p", { class: "muted" }, "Sur le téléphone du compte : Signal, Réglages, Appareils liés, Lier un nouvel appareil, puis scanne ce code. Il donne accès au compte : ne le montre à personne."),
-      h("img", { src: "/api/signal/qr?" + Date.now(), alt: "QR code de liaison Signal", onerror: e => { e.target.replaceWith(h("p", { class: "help", style: "color:var(--bad)" }, "Le QR code n'est pas disponible : signal-cli ne répond pas.")); } }),
-      h("div", { class: "acts" }, h("button", { class: "btn pri", onclick: () => m.remove() }, "Fermer"))));
-  document.body.append(m);
+  const close = h("button", { class: "btn pri", type: "button", onclick: () => d.close() }, "Fermer");
+  const d = openDialog("Lier un appareil", h("div", { class: "box" }, h("h3", null, "Lier un appareil"),
+    h("p", { class: "muted" }, "Sur le téléphone du compte : Signal, Réglages, Appareils liés, Lier un nouvel appareil, puis scanne ce code. Il donne accès au compte : ne le montre à personne."),
+    h("img", { src: "/api/signal/qr?" + Date.now(), alt: "QR code de liaison Signal", onerror: e => { e.target.replaceWith(h("p", { class: "help", style: "color:var(--bad)" }, "Le QR code n'est pas disponible : signal-cli ne répond pas.")); } }),
+    h("div", { class: "acts" }, close)));
+  close.focus();
 }
 async function restart() {
   if (!await confirmBox("Redémarrer le bot ?", "Il termine les réponses en cours, s'arrête, puis revient tout seul s'il tourne dans Docker. Compte une dizaine de secondes.", "Redémarrer", true)) return;
@@ -604,6 +721,7 @@ function update() { // frappe : met à jour la barre d'enregistrement sans recon
   const bar = $("#savebar");
   if (!bar) return;
   bar.hidden = n === 0;
+  $(".app").classList.toggle("dirty", n > 0);
   $("#savecount").textContent = n + (n > 1 ? " modifications non enregistrées" : " modification non enregistrée");
 }
 function render() {
@@ -611,21 +729,24 @@ function render() {
   const active = document.activeElement && document.activeElement.id;
   const pos = window.scrollY;
   const n = changedKeys().length;
-  const nav = PAGES.map(([id, label]) => {
+  const nav = PAGES.map(([id, label, , , short]) => {
     const badge = id === "overview" && S.restart_pending.length ? h("span", { class: "pill warn badge" }, "Redémarrage") : null;
-    return h("button", { class: id === page ? "on" : "", "aria-current": id === page ? "page" : undefined, onclick: () => { page = id; saveError = ""; history.replaceState(null, "", "#" + id); render(); window.scrollTo(0, 0); if (id === "account") refreshSignal(); if (id === "provider") refreshModels(); } }, label, badge);
+    return h("button", { class: id === page ? "on" : "", "aria-label": label, "aria-current": id === page ? "page" : undefined, onclick: () => { page = id; saveError = ""; history.replaceState(null, "", "#" + id); render(); window.scrollTo(0, 0); if (id === "account") refreshSignal(); if (id === "provider") refreshModels(); } },
+      icon(id), h("span", { class: "lbl" }, label), h("span", { class: "lbl-s" }, short), badge);
   });
+  const themeBtn = (cls, text) => h("button", { class: cls, type: "button", onclick: toggleTheme, "aria-label": "Changer de thème clair ou sombre" }, icon("theme"), text);
   const cur = PAGES.find(p => p[0] === page);
   const bar = h("div", { class: "savebar", id: "savebar", hidden: n === 0 }, h("div", { class: "in" },
     h("div", null, h("div", { class: "txt", id: "savecount" }, n + (n > 1 ? " modifications non enregistrées" : " modification non enregistrée")), saveError ? h("div", { class: "err" }, saveError) : null),
     h("div", { class: "row", style: "flex-wrap:nowrap" }, h("button", { class: "btn", onclick: () => { resetDraft(); render(); } }, "Annuler"), h("button", { class: "btn pri", onclick: save }, "Enregistrer"))));
-  root.replaceChildren(h("div", { class: "app" },
+  root.replaceChildren(h("div", { class: "app" + (n ? " dirty" : "") },
     h("aside", { class: "side" }, h("div", { class: "brand" }, h("b", null, "✦"), "Réglages du bot"), h("nav", { "aria-label": "Sections" }, nav),
-      h("div", { class: "foot" },
-        h("button", { class: "btn sm ghost", onclick: toggleTheme, "aria-label": "Changer de thème clair ou sombre" }, "Clair / sombre"))),
+      h("div", { class: "foot" }, h("div", { class: "install-slot" }), themeBtn("btn sm ghost", "Clair / sombre"))),
     h("main", null, h("div", { class: "head" }, h("div", null, h("h1", null, cur[1]), h("p", null, cur[2]),
-      page !== "overview" ? h("p", { class: "help", style: "margin-top:2px" }, "Sauf mention contraire, un changement s'applique dès l'enregistrement.") : null)),
+      page !== "overview" ? h("p", { class: "help", style: "margin-top:2px" }, "Sauf mention contraire, un changement s'applique dès l'enregistrement.") : null),
+      h("div", { class: "head-acts" }, h("div", { class: "install-slot" }), themeBtn("btn ghost icon-btn", null))),
       h("section", { class: "page on" }, cur[3]())), bar));
+  fillInstallSlots();
   if (active) { const el = document.getElementById(active); if (el && el.focus) { el.focus(); try { el.setSelectionRange(el.value.length, el.value.length); } catch (e) { /* pas un champ texte */ } } }
   window.scrollTo(0, pos);
 }
