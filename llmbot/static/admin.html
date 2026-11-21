@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="robots" content="noindex">
-<title>Réglages du bot</title>
+<title>Signal bot settings</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -252,9 +252,9 @@ dialog.modal::backdrop{background:rgba(0,0,0,.5);animation:fade .18s ease}
 <div class="toast" id="toast" aria-live="polite"></div>
 <script>
 "use strict";
-// installable as an app (Brave/Chrome: "Installer"); the worker caches nothing
+// installable as an app (Brave/Chrome: "Install"); the worker caches nothing
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
-// "Installer l'appli": shown only while the browser offers to install the page (HTTPS, not installed
+// "Install app": shown only while the browser offers to install the page (HTTPS, not installed
 // yet), in the page's own slots (sidebar, phone header, login card) so it never covers another button
 let installPrompt = null;
 async function install() {
@@ -267,7 +267,7 @@ async function install() {
 function fillInstallSlots() {
   for (const slot of document.querySelectorAll(".install-slot")) {
     slot.replaceChildren();
-    if (installPrompt) { const b = document.createElement("button"); b.className = "btn sm"; b.type = "button"; b.textContent = "Installer l'appli"; b.addEventListener("click", install); slot.append(b); }
+    if (installPrompt) { const b = document.createElement("button"); b.className = "btn sm"; b.type = "button"; b.textContent = "Install app"; b.addEventListener("click", install); slot.append(b); }
   }
 }
 window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; fillInstallSlots(); });
@@ -300,18 +300,20 @@ function h(tag, props, ...kids) {
   for (const kid of kids.flat()) if (kid != null && kid !== false) el.append(kid.nodeType ? kid : document.createTextNode(kid));
   return el;
 }
-const fr = new Intl.NumberFormat("fr-FR");
-const money = n => n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " $";
+const nf = new Intl.NumberFormat("en-GB");
+const money = n => "$" + n.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const plural = (n, one, many) => nf.format(n) + " " + (n === 1 ? one : many);
+const unsaved = n => plural(n, "unsaved change", "unsaved changes");
 function duration(s) {
   if (s < 90) return s + " s";
   if (s < 5400) return Math.round(s / 60) + " min";
   if (s < 172800) return Math.round(s / 3600) + " h";
-  return Math.round(s / 86400) + " jours";
+  return Math.round(s / 86400) + " days";
 }
 function ago(ts) {
-  if (!ts) return "aucun message";
+  if (!ts) return "no messages";
   const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
-  return s < 60 ? "à l'instant" : "il y a " + duration(s);
+  return s < 60 ? "just now" : duration(s) + " ago";
 }
 function toast(text, kind = "ok") {
   const el = h("div", { class: kind }, text);
@@ -323,7 +325,7 @@ async function api(method, path, body) {
   let data = {};
   try { data = await r.json(); } catch (e) { /* image ou vide */ }
   if (r.status === 401 && path !== "/api/login") { showLogin(); throw new Error("login"); }
-  if (!r.ok) throw new Error(data.error || "Erreur " + r.status);
+  if (!r.ok) throw new Error(data.error || "Error " + r.status);
   return data;
 }
 // a native modal <dialog>: Escape and Android's back gesture close it, focus goes back to the button
@@ -341,7 +343,7 @@ function openDialog(title, box, onClose) {
 function confirmBox(title, text, okLabel, danger) {
   return new Promise(resolve => {
     let ok = false;
-    const cancel = h("button", { class: "btn", type: "button", onclick: () => d.close() }, "Annuler");
+    const cancel = h("button", { class: "btn", type: "button", onclick: () => d.close() }, "Cancel");
     const d = openDialog(title, h("div", { class: "box" }, h("h3", null, title), h("p", { class: "muted" }, text),
       h("div", { class: "acts" }, cancel, h("button", { class: "btn " + (danger ? "bad" : "pri"), type: "button", onclick: () => { ok = true; d.close(); } }, okLabel))),
       () => resolve(ok));
@@ -367,35 +369,35 @@ function toggleTheme() {
 
 /* ---------- libellés des réglages ---------- */
 const DEF = {
-  local_base_url: ["Adresse du serveur local", "Un serveur compatible OpenAI : llama-swap, llama-server, Ollama ou vLLM.", "http://127.0.0.1:8089/v1"],
-  chat_model: ["Modèle de conversation", "Le modèle qui écrit les réponses. Avec un serveur local, le nom que ce serveur connaît.", "deepseek/deepseek-v4.1-flash"],
-  image_model: ["Modèle d'images", "Laisse vide pour interdire la création d'images. Toujours fait par OpenRouter, même avec un serveur local.", "meta/muse-image"],
-  transcribe_base_url: ["Serveur local de transcription des vocaux", "Un serveur compatible OpenAI pour la voix (/audio/transcriptions), par exemple Parakeet. Gratuit, rien ne sort de chez toi. Vide = OpenRouter.", "http://127.0.0.1:8094/v1"],
-  transcribe_model: ["Modèle de transcription des vocaux", "Sur OpenRouter. Avec un serveur local de transcription, il ne sert que si ce serveur échoue ou n'entend rien. Vide partout = vocaux non transcrits.", "google/gemini-3.1-flash-lite"],
-  openrouter_api_key: ["Clé OpenRouter", "Sert aux réponses (si OpenRouter est le fournisseur), aux images et aux vocaux."],
-  klipy_api_key: ["Clé Klipy", "Gratuite : crée un compte sur partner.klipy.com, puis « API Keys »."],
-  web_tools: ["Outils gratuits (internet, météo, calcul)", "Interrupteur général de la recherche, de la lecture de lien, de la météo, de l'heure et de la calculatrice."],
-  phone_number: ["Numéro du bot", "Le compte Signal que le bot utilise, au format +33612345678.", "+33612345678"],
-  bot_name: ["Nom du bot", "Le nom qu'il faut écrire pour lui parler."],
-  bot_aliases: ["Autres noms", "Un par ligne. Le bot répond aussi quand on les écrit."],
-  owner_number: ["Numéro du propriétaire", "Le seul à pouvoir effacer la mémoire d'une conversation avec /clear, et à recevoir le message de redémarrage.", "+33612345678"],
-  allowed_groups: ["Groupes autorisés", "Un par ligne, nom ou identifiant du groupe. Vide = le bot répond dans tous les groupes."],
-  allowed_numbers: ["Personnes autorisées en privé", "Un numéro (+33612345678) ou un identifiant Signal (pour quelqu'un qui cache son numéro) par ligne. Vide = tout le monde, ou seulement les membres des groupes autorisés si des groupes sont listés."],
-  timezone: ["Fuseau horaire", "Pour les heures que le bot lit et annonce.", "Europe/Paris"],
-  rate_limit_per_hour: ["Demandes par heure et par personne", "0 = pas de limite."],
-  images_per_day: ["Images par jour et par personne", "0 = pas de limite."],
-  context_messages: ["Messages lus à chaque demande", "Les derniers messages du groupe donnés au bot. Plus il y en a, plus un petit modèle est lent."],
-  max_output_tokens: ["Longueur maximale d'une réponse", "En jetons (à peu près trois quarts de mot). Doublée une fois si la réponse est coupée."],
-  describe_images: ["Décrire les images reçues", "Le bot résume chaque image pour mieux résumer les conversations. Une requête de plus par image."],
-  announce_startup: ["Prévenir le propriétaire au démarrage", "Un message privé à chaque redémarrage, avec le modèle utilisé."],
-  attachment_retention_days: ["Garder les pièces jointes (jours)", "Les images et vocaux plus anciens sont effacés au démarrage."],
+  local_base_url: ["Local server address", "An OpenAI-compatible server: llama-swap, llama-server, Ollama or vLLM.", "http://127.0.0.1:8089/v1"],
+  chat_model: ["Chat model", "The model that writes the replies. With a local server, the name that server knows.", "deepseek/deepseek-v4.1-flash"],
+  image_model: ["Image model", "Leave empty to turn image creation off. Always done by OpenRouter, even with a local server.", "meta/muse-image"],
+  transcribe_base_url: ["Local voice note transcription server", "An OpenAI-compatible speech server (/audio/transcriptions), for example Parakeet. Free, nothing leaves your machine. Empty = OpenRouter.", "http://127.0.0.1:8094/v1"],
+  transcribe_model: ["Voice note transcription model", "On OpenRouter. With a local transcription server it is only used if that server fails or hears nothing. Empty everywhere = voice notes are not transcribed.", "google/gemini-3.1-flash-lite"],
+  openrouter_api_key: ["OpenRouter key", "Used for replies (when OpenRouter is the provider), images and voice notes."],
+  klipy_api_key: ["Klipy key", "Free: create an account at partner.klipy.com, then open \u201cAPI Keys\u201d."],
+  web_tools: ["Free tools (web, weather, calculator)", "Master switch for web search, reading links, weather, time and the calculator."],
+  phone_number: ["Bot number", "The Signal account the bot uses, in the format +33612345678.", "+33612345678"],
+  bot_name: ["Bot name", "The name people write to talk to it."],
+  bot_aliases: ["Other names", "One per line. The bot also answers to these."],
+  owner_number: ["Owner number", "The only one who can wipe a conversation's memory with /clear, and who gets the restart message.", "+33612345678"],
+  allowed_groups: ["Allowed groups", "One per line, group name or ID. Empty = the bot answers in every group."],
+  allowed_numbers: ["People allowed in private", "One number (+33612345678) or one Signal ID (for someone who hides their number) per line. Empty = everyone, or only the members of the allowed groups if groups are listed."],
+  timezone: ["Timezone", "For the times the bot reads and announces.", "Europe/Paris"],
+  rate_limit_per_hour: ["Requests per hour per person", "0 = no limit."],
+  images_per_day: ["Images per day per person", "0 = no limit."],
+  context_messages: ["Messages read per request", "The latest group messages given to the bot. The more there are, the slower a small model gets."],
+  max_output_tokens: ["Maximum reply length", "In tokens (about three quarters of a word). Doubled once if the reply is cut off."],
+  describe_images: ["Describe received images", "The bot summarises each image so it can summarise conversations better. One extra request per image."],
+  announce_startup: ["Tell the owner at startup", "A private message at every restart, with the model in use."],
+  attachment_retention_days: ["Keep attachments (days)", "Images and voice notes older than this are deleted at startup."],
 };
 const TRY = {
-  web_search: ["Une recherche", "classement ligue 1"], read_page: ["Une adresse", "https://example.com"],
-  get_weather: ["Une ville", "Lyon, France"], get_time: ["Un fuseau", "Asia/Tokyo"], calculate: ["Un calcul", "214,60 / 7"],
-  send_gif: ["Des mots-clés en anglais", "applause"], get_spend: null, generate_image: false, get_history: false, search_messages: false, remind: false,
-  make_meme: ["Deux légendes séparées par une virgule", "le lundi matin, le vendredi soir"],
-  pick_random: ["Des choix séparés par des virgules", "pizza, sushi, burger"],
+  web_search: ["A search", "Premier League table"], read_page: ["A link", "https://example.com"],
+  get_weather: ["A city", "Lyon, France"], get_time: ["A timezone", "Asia/Tokyo"], calculate: ["A calculation", "214.60 / 7"],
+  send_gif: ["Keywords in English", "applause"], get_spend: null, generate_image: false, get_history: false, search_messages: false, remind: false,
+  make_meme: ["Two captions separated by a comma", "Monday morning, Friday evening"],
+  pick_random: ["Choices separated by commas", "pizza, sushi, burger"],
 };
 
 /* ---------- icônes (Lucide, licence ISC) ---------- */
@@ -458,7 +460,7 @@ function buildBody() {
 function showLogin(msg) {
   const root = $("#root");
   root.replaceChildren();
-  const pw = h("input", { type: "password", autocomplete: "current-password", id: "pw", placeholder: "Mot de passe", enterkeyhint: "go", autocapitalize: "off", spellcheck: false });
+  const pw = h("input", { type: "password", autocomplete: "current-password", id: "pw", placeholder: "Password", enterkeyhint: "go", autocapitalize: "off", spellcheck: false });
   const err = h("p", { class: "help", style: "color:var(--bad)" }, msg || "");
   const go = async () => {
     err.textContent = "";
@@ -467,9 +469,9 @@ function showLogin(msg) {
   };
   pw.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
   root.append(h("div", { class: "login" }, h("div", { class: "card" },
-    h("div", null, h("h2", null, "Réglages du bot"), h("p", { class: "help", style: "margin-top:4px" }, "Entre le mot de passe d'administration (ADMIN_TOKEN du fichier .env).")),
-    h("div", { class: "f" }, h("label", { for: "pw" }, "Mot de passe"), pw), err,
-    h("button", { class: "btn pri", onclick: go }, "Se connecter"), h("div", { class: "install-slot" }))));
+    h("div", null, h("h2", null, "Signal bot settings"), h("p", { class: "help", style: "margin-top:4px" }, "Enter the admin password (ADMIN_TOKEN in the .env file).")),
+    h("div", { class: "f" }, h("label", { for: "pw" }, "Password"), pw), err,
+    h("button", { class: "btn pri", onclick: go }, "Sign in"), h("div", { class: "install-slot" }))));
   fillInstallSlots();
   pw.focus();
 }
@@ -478,12 +480,12 @@ function showLogin(msg) {
 function meta(key) {
   const f = S.fields[key];
   const bits = [];
-  if (!f.live) bits.push(h("span", { class: "restart" }, "S'applique au redémarrage"));
+  if (!f.live) bits.push(h("span", { class: "restart" }, "Applies after restart"));
   if (f.source === "page" || D.reset.has(key)) {
     if (bits.length) bits.push(h("span", null, "·"));
-    bits.push(h("span", { class: "src" }, D.reset.has(key) ? "Retour au fichier .env à l'enregistrement" : "Modifié ici"));
-    if (!D.reset.has(key)) bits.push(h("button", { type: "button", onclick: () => { D.reset.add(key); const e = S.fields[key].env_value; if (f.kind !== "secret") D.values[key] = JSON.parse(JSON.stringify(e)); delete D.secretNew[key]; D.secretClear.delete(key); render(); } }, "Revenir au .env"));
-    else bits.push(h("button", { type: "button", onclick: () => { D.reset.delete(key); if (f.kind !== "secret") D.values[key] = JSON.parse(JSON.stringify(f.value)); render(); } }, "Annuler"));
+    bits.push(h("span", { class: "src" }, D.reset.has(key) ? "Goes back to the .env file when saved" : "Changed here"));
+    if (!D.reset.has(key)) bits.push(h("button", { type: "button", onclick: () => { D.reset.add(key); const e = S.fields[key].env_value; if (f.kind !== "secret") D.values[key] = JSON.parse(JSON.stringify(e)); delete D.secretNew[key]; D.secretClear.delete(key); render(); } }, "Reset to .env"));
+    else bits.push(h("button", { type: "button", onclick: () => { D.reset.delete(key); if (f.kind !== "secret") D.values[key] = JSON.parse(JSON.stringify(f.value)); render(); } }, "Cancel"));
   }
   return bits.length ? h("div", { class: "meta" }, bits) : null;
 }
@@ -520,18 +522,18 @@ function secretField(key, opts = {}) {
   const f = S.fields[key];
   const id = "f-" + key;
   const cleared = D.secretClear.has(key);
-  const box = h("input", { id, type: "password", autocomplete: "new-password", autocapitalize: "off", spellcheck: false, enterkeyhint: "done", placeholder: "Colle la clé ici", value: D.secretNew[key] || "",
+  const box = h("input", { id, type: "password", autocomplete: "new-password", autocapitalize: "off", spellcheck: false, enterkeyhint: "done", placeholder: "Paste the key here", value: D.secretNew[key] || "",
     oninput: e => { D.secretNew[key] = e.target.value; D.secretClear.delete(key); D.reset.delete(key); update(); } });
   let status;
-  if (cleared) status = h("span", { class: "pill warn" }, "Sera supprimée");
-  else if (f.is_set) status = h("span", { class: "pill ok" }, "Enregistrée " + f.hint);
-  else status = h("span", { class: "pill idle" }, "Aucune clé");
+  if (cleared) status = h("span", { class: "pill warn" }, "Will be deleted");
+  else if (f.is_set) status = h("span", { class: "pill ok" }, "Saved " + f.hint);
+  else status = h("span", { class: "pill idle" }, "No key");
   const acts = [];
-  if (!cleared && f.is_set) acts.push(h("button", { class: "btn sm bad", type: "button", onclick: () => { D.secretClear.add(key); delete D.secretNew[key]; render(); } }, "Supprimer la clé"));
-  if (cleared) acts.push(h("button", { class: "btn sm", type: "button", onclick: () => { D.secretClear.delete(key); render(); } }, "Annuler"));
+  if (!cleared && f.is_set) acts.push(h("button", { class: "btn sm bad", type: "button", onclick: () => { D.secretClear.add(key); delete D.secretNew[key]; render(); } }, "Delete key"));
+  if (cleared) acts.push(h("button", { class: "btn sm", type: "button", onclick: () => { D.secretClear.delete(key); render(); } }, "Cancel"));
   if (opts.test) acts.push(opts.test);
   return h("div", { class: "f" }, h("label", { for: id }, label), h("div", { class: "row" }, status, ...acts),
-    cleared ? null : box, h("div", { class: "help" }, f.is_set ? "Pour la remplacer, colle la nouvelle clé. La clé enregistrée n'est jamais affichée. " + help : help), meta(key));
+    cleared ? null : box, h("div", { class: "help" }, f.is_set ? "To replace it, paste the new key. The saved key is never shown. " + help : help), meta(key));
 }
 
 /* ---------- pages ---------- */
@@ -540,46 +542,46 @@ function statCard(k, v, s, extra) { return h("div", { class: "card stat" }, h("d
 function pageOverview() {
   const st = S.status;
   const sig = signal;
-  let sigPill = h("span", { class: "pill idle" }, "Vérification…");
-  if (sig) sigPill = !sig.reachable ? h("span", { class: "pill bad" }, "signal-cli ne répond pas")
-    : sig.registered === false ? h("span", { class: "pill warn" }, "Compte non lié")
-    : sig.registered ? h("span", { class: "pill ok" }, "Connecté") : h("span", { class: "pill warn" }, "Compte non vérifié");
+  let sigPill = h("span", { class: "pill idle" }, "Checking…");
+  if (sig) sigPill = !sig.reachable ? h("span", { class: "pill bad" }, "signal-cli is not responding")
+    : sig.registered === false ? h("span", { class: "pill warn" }, "Account not linked")
+    : sig.registered ? h("span", { class: "pill ok" }, "Connected") : h("span", { class: "pill warn" }, "Account not verified");
   const out = [];
-  if (S.restart_pending.length) out.push(h("div", { class: "banner warn" }, h("span", null, h("b", null, "Un redémarrage est nécessaire "), "pour appliquer : " + S.restart_pending.map(k => (DEF[k] || [k])[0].toLowerCase()).join(", ") + "."),
-    h("button", { class: "btn sm", onclick: restart }, "Redémarrer maintenant")));
+  if (S.restart_pending.length) out.push(h("div", { class: "banner warn" }, h("span", null, h("b", null, "A restart is needed "), "to apply: " + S.restart_pending.map(k => (DEF[k] || [k])[0].toLowerCase()).join(", ") + "."),
+    h("button", { class: "btn sm", onclick: restart }, "Restart now")));
   out.push(h("div", { class: "cards3" },
-    statCard("Fournisseur", st.provider === "local" ? "Serveur local" : "OpenRouter", st.chat_model),
-    statCard("Signal", sigPill, sig ? (sig.phone_number || "Aucun numéro") : "", null),
-    statCard("Dans la base", fr.format(st.messages) + " messages", fr.format(st.chats) + " conversation(s) · dernier : " + ago(st.last_message_ts)),
-    statCard("Coût du bot", money(st.cost_24h), "sur 24 h · " + money(st.cost_30d) + " sur 30 jours"),
-    statCard("En ligne depuis", duration(st.uptime_seconds), "Le bot s'appelle « " + st.bot_name + " »")));
+    statCard("Provider", st.provider === "local" ? "Local server" : "OpenRouter", st.chat_model),
+    statCard("Signal", sigPill, sig ? (sig.phone_number || "No number") : "", null),
+    statCard("In the database", plural(st.messages, "message", "messages"), plural(st.chats, "conversation", "conversations") + " · last: " + ago(st.last_message_ts)),
+    statCard("Bot cost", money(st.cost_24h), "over 24 h · " + money(st.cost_30d) + " over 30 days"),
+    statCard("Running for", duration(st.uptime_seconds), "The bot is called \u201c" + st.bot_name + "\u201d")));
   const missing = S.tools.filter(t => !t.locked && !t.working && t.enabled && t.reason);
-  out.push(h("div", { class: "card" }, h("h3", null, "Outils"), h("p", { class: "lead" }, "Ce que le bot sait faire en ce moment (en gris : éteint). Touche un outil pour l'ouvrir."),
+  out.push(h("div", { class: "card" }, h("h3", null, "Tools"), h("p", { class: "lead" }, "What the bot can do right now (grey: off). Tap a tool to open it."),
     h("div", { class: "row", style: "gap:12px 8px;margin-top:12px" }, S.tools.map(t => h("button", { class: "pill pill-btn " + (t.locked || t.working ? "ok" : t.enabled ? "warn" : "idle"), type: "button", onclick: () => openTool(t.name) }, t.label))),
-    missing.length ? h("div", { style: "display:grid;gap:4px;margin-top:12px" }, missing.map(t => h("p", { class: "help" }, h("b", { style: "color:var(--warn);font-weight:600" }, t.label + " : "), t.reason))) : null));
+    missing.length ? h("div", { style: "display:grid;gap:4px;margin-top:12px" }, missing.map(t => h("p", { class: "help" }, h("b", { style: "color:var(--warn);font-weight:600" }, t.label + ": "), t.reason))) : null));
   return out;
 }
 
 function pageProvider() {
   const local = !!(D.values.local_base_url);
   const mode = h("div", { class: "seg", role: "tablist" },
-    h("button", { class: local ? "on" : "", role: "tab", "aria-selected": local ? "true" : "false", onclick: () => { D.values.local_base_url = lastLocalUrl || "http://127.0.0.1:8089/v1"; D.reset.delete("local_base_url"); providerMsg = null; render(); } }, "Serveur local"),
+    h("button", { class: local ? "on" : "", role: "tab", "aria-selected": local ? "true" : "false", onclick: () => { D.values.local_base_url = lastLocalUrl || "http://127.0.0.1:8089/v1"; D.reset.delete("local_base_url"); providerMsg = null; render(); } }, "Local server"),
     h("button", { class: local ? "" : "on", role: "tab", "aria-selected": local ? "false" : "true", onclick: () => { if (D.values.local_base_url) lastLocalUrl = D.values.local_base_url; D.values.local_base_url = ""; D.reset.delete("local_base_url"); providerMsg = null; render(); } }, "OpenRouter"));
-  const testBtn = h("button", { class: "btn sm", type: "button", onclick: testProvider }, "Tester la connexion");
+  const testBtn = h("button", { class: "btn sm", type: "button", onclick: testProvider }, "Test connection");
   const msg = providerMsg ? h("span", { class: "pill " + (providerMsg.ok ? "ok" : "bad") }, providerMsg.message) : null;
   const cards = [];
   cards.push(h("div", { class: "card stack" },
-    h("div", null, h("h3", null, "Qui écrit les réponses"), h("p", { class: "lead" }, local
-      ? "Le bot parle à un serveur sur ton réseau : rien ne sort de chez toi pour la conversation."
-      : "Le bot envoie la conversation à OpenRouter, qui choisit le modèle et facture à l'usage.")),
+    h("div", null, h("h3", null, "Who writes the replies"), h("p", { class: "lead" }, local
+      ? "The bot talks to a server on your network: nothing leaves your machine for the conversation."
+      : "The bot sends the conversation to OpenRouter, which runs the model and bills per use.")),
     mode,
     local ? textField("local_base_url") : (S.fields.local_base_url.env_value || D.reset.has("local_base_url") ? h("div", { class: "f" },
-      h("div", { class: "help" }, S.fields.local_base_url.env_value ? "Le fichier .env indique un serveur local (" + S.fields.local_base_url.env_value + "), mis de côté ici." : ""), meta("local_base_url")) : null),
+      h("div", { class: "help" }, S.fields.local_base_url.env_value ? "The .env file points to a local server (" + S.fields.local_base_url.env_value + "), set aside here." : ""), meta("local_base_url")) : null),
     textField("chat_model", { list: "dl-chat" }),
     h("datalist", { id: "dl-chat" }, (local ? localModels : models.chat).slice(0, 400).map(m => h("option", { value: m }))),
     h("div", { class: "row" }, testBtn, msg)));
   cards.push(h("div", { class: "card stack" },
-    h("div", null, h("h3", null, "OpenRouter"), h("p", { class: "lead" }, "Même avec un serveur local, les images passent par OpenRouter. Les vocaux aussi, sauf avec un serveur local de transcription.")),
+    h("div", null, h("h3", null, "OpenRouter"), h("p", { class: "lead" }, "Even with a local server, images go through OpenRouter. So do voice notes, unless a local transcription server is set.")),
     secretField("openrouter_api_key", { test: local ? null : null }),
     textField("image_model", { list: "dl-image" }), h("datalist", { id: "dl-image" }, models.image.slice(0, 300).map(m => h("option", { value: m }))),
     textField("transcribe_base_url"),
@@ -589,15 +591,15 @@ function pageProvider() {
 
 function toolRow(t) {
   const on = !D.tools.has(t.name);
-  const state = t.locked ? h("span", { class: "pill ok" }, "Toujours actif")
-    : !on ? h("span", { class: "pill idle" }, "Éteint")
+  const state = t.locked ? h("span", { class: "pill ok" }, "Always on")
+    : !on ? h("span", { class: "pill idle" }, "Off")
     : t.reason && !S.tools.find(x => x.name === t.name).working ? h("span", { class: "pill warn" }, t.reason)
-    : h("span", { class: "pill ok" }, "Actif");
+    : h("span", { class: "pill ok" }, "On");
   const sw = h("span", { class: "sw" }, h("input", { id: "t-" + t.name, type: "checkbox", role: "switch", checked: on, disabled: t.locked, "aria-label": t.label, onchange: e => { if (e.target.checked) D.tools.delete(t.name); else D.tools.add(t.name); render(); } }), h("i"));
   const tr = TRY[t.name];
   const open = tryState[t.name] && tryState[t.name].open;
   const parts = [h("div", { class: "top" }, h("div", { class: "txt" }, h("div", { class: "name" }, t.label, state), h("div", { class: "help" }, t.help)),
-    (tr !== false && !t.locked) ? h("button", { class: "btn sm", type: "button", "aria-expanded": open ? "true" : "false", onclick: () => { tryState[t.name] = { ...(tryState[t.name] || {}), open: !open }; render(); if (!open) { const i = document.getElementById("try-" + t.name); if (i) i.focus(); } } }, open ? "Fermer" : "Essayer") : null, sw)];
+    (tr !== false && !t.locked) ? h("button", { class: "btn sm", type: "button", "aria-expanded": open ? "true" : "false", onclick: () => { tryState[t.name] = { ...(tryState[t.name] || {}), open: !open }; render(); if (!open) { const i = document.getElementById("try-" + t.name); if (i) i.focus(); } } }, open ? "Close" : "Try") : null, sw)];
   if (t.name === "send_gif") parts.push(h("div", { class: "keybox" }, secretField("klipy_api_key")));
   if (open) {
     const ts = tryState[t.name];
@@ -605,8 +607,8 @@ function toolRow(t) {
       placeholder: tr[1], value: ts.text || "", "aria-label": tr[0], oninput: e => { ts.text = e.target.value; },
       onkeydown: e => { if (e.key === "Enter") runTry(t.name); } }) : null;
     parts.push(h("div", { class: "try" }, h("div", { class: "row" }, input ? h("div", { style: "flex:1;min-width:180px" }, input) : null,
-      h("button", { class: "btn sm pri", type: "button", disabled: ts.busy, onclick: () => runTry(t.name) }, ts.busy ? "En cours…" : "Lancer")),
-      ts.result ? h("pre", null, ts.result.text) : null, ts.result && ts.result.gif ? h("img", { src: ts.result.gif, alt: "GIF trouvé" }) : null));
+      h("button", { class: "btn sm pri", type: "button", disabled: ts.busy, onclick: () => runTry(t.name) }, ts.busy ? "Running…" : "Run")),
+      ts.result ? h("pre", null, ts.result.text) : null, ts.result && ts.result.gif ? h("img", { src: ts.result.gif, alt: "GIF found" }) : null));
   }
   return h("div", { class: "tool", id: "tool-" + t.name }, parts);
 }
@@ -626,56 +628,56 @@ function pageTools() {
   const groups = {};
   for (const t of S.tools) (groups[t.group] = groups[t.group] || []).push(t);
   const out = [h("div", { class: "card" }, boolField("web_tools"))];
-  for (const g of ["Internet", "Images", "Conversation", "Utilitaires"]) { const list = groups[g] || []; out.push(h("div", { class: "tools" }, h("h4", null, g.toUpperCase()), list.map(toolRow))); }
-  out.push(h("p", { class: "help" }, "Un outil éteint n'est plus proposé au bot, qui ne sait plus qu'il existe. L'essai d'un outil ne dépense rien."));
+  for (const g of ["Internet", "Images", "Conversation", "Utilities"]) { const list = groups[g] || []; out.push(h("div", { class: "tools" }, h("h4", null, g.toUpperCase()), list.map(toolRow))); }
+  out.push(h("p", { class: "help" }, "A tool that is off is no longer offered to the bot, which no longer knows it exists. Trying a tool costs nothing."));
   return out;
 }
 
 function pageAccount() {
   const sg = signal;
   let status;
-  if (!sg) status = h("span", { class: "pill idle" }, "Vérification…");
-  else if (!sg.reachable) status = h("span", { class: "pill bad" }, "signal-cli ne répond pas à " + sg.service);
-  else if (sg.registered === false) status = h("span", { class: "pill warn" }, "Ce numéro n'est pas lié à signal-cli");
-  else if (!sg.registered) status = h("span", { class: "pill warn" }, "Liste des comptes illisible : réessaie avec « Revérifier »");
-  else status = h("span", { class: "pill ok" }, "Connecté à Signal");
+  if (!sg) status = h("span", { class: "pill idle" }, "Checking…");
+  else if (!sg.reachable) status = h("span", { class: "pill bad" }, "signal-cli is not responding at " + sg.service);
+  else if (sg.registered === false) status = h("span", { class: "pill warn" }, "This number is not linked to signal-cli");
+  else if (!sg.registered) status = h("span", { class: "pill warn" }, "Could not read the account list: try again with \u201cCheck again\u201d");
+  else status = h("span", { class: "pill ok" }, "Connected to Signal");
   return [
-    h("div", { class: "card stack" }, h("div", null, h("h3", null, "Compte Signal"), h("p", { class: "lead" }, "Le numéro avec lequel le bot lit et écrit.")),
-      h("div", { class: "row" }, status, h("span", { class: "help" }, "Service : " + S.status.signal_service)),
+    h("div", { class: "card stack" }, h("div", null, h("h3", null, "Signal account"), h("p", { class: "lead" }, "The number the bot reads and writes with.")),
+      h("div", { class: "row" }, status, h("span", { class: "help" }, "Service: " + S.status.signal_service)),
       textField("phone_number"),
-      h("div", { class: "row" }, h("button", { class: "btn sm", type: "button", onclick: showQr }, "Lier un appareil (QR code)"), h("button", { class: "btn sm ghost", type: "button", onclick: refreshSignal }, "Revérifier"))),
-    h("div", { class: "card stack" }, h("div", null, h("h3", null, "Dans quels groupes et avec qui il répond"), h("p", { class: "lead" }, "Laisse vide pour répondre partout et à tout le monde.")),
+      h("div", { class: "row" }, h("button", { class: "btn sm", type: "button", onclick: showQr }, "Link a device (QR code)"), h("button", { class: "btn sm ghost", type: "button", onclick: refreshSignal }, "Check again"))),
+    h("div", { class: "card stack" }, h("div", null, h("h3", null, "Which groups it answers in, and to whom"), h("p", { class: "lead" }, "Leave empty to answer everywhere and to everyone.")),
       textField("allowed_groups"), textField("allowed_numbers")),
-    h("div", { class: "card stack" }, h("div", null, h("h3", null, "Identité du bot")),
+    h("div", { class: "card stack" }, h("div", null, h("h3", null, "Bot identity")),
       textField("bot_name"), textField("bot_aliases"), textField("owner_number"), textField("timezone")),
   ];
 }
 
 function pageBehavior() {
   return [
-    h("div", { class: "card stack" }, h("div", null, h("h3", null, "Limites"), h("p", { class: "lead" }, "Pour que le bot ne coûte pas trop et ne noie pas le groupe.")),
+    h("div", { class: "card stack" }, h("div", null, h("h3", null, "Limits"), h("p", { class: "lead" }, "So the bot does not cost too much or flood the group.")),
       h("div", { class: "grid2" }, textField("rate_limit_per_hour"), textField("images_per_day"))),
-    h("div", { class: "card stack" }, h("div", null, h("h3", null, "Mémoire et réponses")),
+    h("div", { class: "card stack" }, h("div", null, h("h3", null, "Memory and replies")),
       h("div", { class: "grid2" }, textField("context_messages"), textField("max_output_tokens")), boolField("describe_images")),
-    h("div", { class: "card stack" }, h("div", null, h("h3", null, "Démarrage")),
+    h("div", { class: "card stack" }, h("div", null, h("h3", null, "Startup")),
       boolField("announce_startup"), textField("attachment_retention_days")),
-    h("div", { class: "card stack" }, h("div", null, h("h3", null, "Maintenance"), h("p", { class: "lead" }, "Le redémarrage laisse le bot finir ses réponses en cours. Il revient tout seul s'il tourne dans Docker.")),
-      h("div", { class: "row" }, h("button", { class: "btn", onclick: restart }, "Redémarrer le bot"), h("button", { class: "btn ghost", onclick: logout }, "Se déconnecter"))),
+    h("div", { class: "card stack" }, h("div", null, h("h3", null, "Maintenance"), h("p", { class: "lead" }, "A restart lets the bot finish the replies in progress. It comes back by itself when it runs in a container.")),
+      h("div", { class: "row" }, h("button", { class: "btn", onclick: restart }, "Restart the bot"), h("button", { class: "btn ghost", onclick: logout }, "Sign out"))),
   ];
 }
 
 const PAGES = [  // id, title, line under it, page, label in the phone's tab bar
-  ["overview", "Aperçu", "Où en est le bot, en un coup d'œil.", pageOverview, "Aperçu"],
-  ["provider", "Fournisseur", "Qui écrit les réponses du bot, et avec quelle clé.", pageProvider, "Fournisseur"],
-  ["tools", "Outils", "Ce que le bot a le droit de faire.", pageTools, "Outils"],
-  ["account", "Compte et groupes", "Le numéro Signal, le nom du bot et les groupes où il répond.", pageAccount, "Compte"],
-  ["behavior", "Comportement", "Limites, mémoire et maintenance.", pageBehavior, "Comportement"],
+  ["overview", "Overview", "Where the bot stands, at a glance.", pageOverview, "Overview"],
+  ["provider", "Provider", "Who writes the bot's replies, and with which key.", pageProvider, "Provider"],
+  ["tools", "Tools", "What the bot is allowed to do.", pageTools, "Tools"],
+  ["account", "Account and groups", "The Signal number, the bot's name and the groups it answers in.", pageAccount, "Account"],
+  ["behavior", "Behaviour", "Limits, memory and maintenance.", pageBehavior, "Behaviour"],
 ];
 
 /* ---------- actions ---------- */
 async function testProvider() {
   const local = !!D.values.local_base_url;
-  providerMsg = { ok: true, message: "Test en cours…" }; render();
+  providerMsg = { ok: true, message: "Testing…" }; render();
   try {
     providerMsg = await api("POST", "/api/test/provider", { base_url: local ? D.values.local_base_url : "", api_key: D.secretNew.openrouter_api_key || "" });
     if (providerMsg.models && providerMsg.models.length) localModels = providerMsg.models;
@@ -691,21 +693,21 @@ async function runTry(name) {
 }
 async function refreshSignal() { signal = null; render(); try { signal = await api("GET", "/api/signal"); } catch (e) { signal = { reachable: false, service: S.status.signal_service }; } render(); }
 function showQr() {
-  const close = h("button", { class: "btn pri", type: "button", onclick: () => d.close() }, "Fermer");
-  const d = openDialog("Lier un appareil", h("div", { class: "box" }, h("h3", null, "Lier un appareil"),
-    h("p", { class: "muted" }, "Sur le téléphone du compte : Signal, Réglages, Appareils liés, Lier un nouvel appareil, puis scanne ce code. Il donne accès au compte : ne le montre à personne."),
-    h("img", { src: "/api/signal/qr?" + Date.now(), alt: "QR code de liaison Signal", onerror: e => { e.target.replaceWith(h("p", { class: "help", style: "color:var(--bad)" }, "Le QR code n'est pas disponible : signal-cli ne répond pas.")); } }),
+  const close = h("button", { class: "btn pri", type: "button", onclick: () => d.close() }, "Close");
+  const d = openDialog("Link a device", h("div", { class: "box" }, h("h3", null, "Link a device"),
+    h("p", { class: "muted" }, "On the account's phone: open Signal, then Settings > Linked devices > Link new device, and scan this code. It gives access to the account: do not show it to anyone."),
+    h("img", { src: "/api/signal/qr?" + Date.now(), alt: "Signal link QR code", onerror: e => { e.target.replaceWith(h("p", { class: "help", style: "color:var(--bad)" }, "The QR code is not available: signal-cli is not responding.")); } }),
     h("div", { class: "acts" }, close)));
   close.focus();
 }
 async function restart() {
-  if (!await confirmBox("Redémarrer le bot ?", "Il termine les réponses en cours, s'arrête, puis revient tout seul s'il tourne dans Docker. Compte une dizaine de secondes.", "Redémarrer", true)) return;
+  if (!await confirmBox("Restart the bot?", "It finishes the replies in progress, stops, then comes back by itself when it runs in a container. Allow about ten seconds.", "Restart", true)) return;
   try { await api("POST", "/api/restart"); } catch (e) { toast(e.message, "bad"); return; }
-  toast("Redémarrage en cours…");
+  toast("Restarting…");
   const t0 = Date.now();
   const poll = async () => {
-    try { const r = await fetch("/healthz", { cache: "no-store" }); if (r.ok && Date.now() - t0 > 4000) { await load(); toast("Le bot est revenu."); return; } } catch (e) { /* encore éteint */ }
-    if (Date.now() - t0 > 120000) { toast("Le bot ne répond pas encore. Vérifie qu'il redémarre (docker compose ps).", "bad"); return; }
+    try { const r = await fetch("/healthz", { cache: "no-store" }); if (r.ok && Date.now() - t0 > 4000) { await load(); toast("The bot is back."); return; } } catch (e) { /* encore éteint */ }
+    if (Date.now() - t0 > 120000) { toast("The bot is not responding yet. Check that it is restarting (docker compose ps).", "bad"); return; }
     setTimeout(poll, 1500);
   };
   setTimeout(poll, 2500);
@@ -719,7 +721,7 @@ async function save() {
     const r = await api("PUT", "/api/config", buildBody());
     S = r.state; resetDraft();
     const now = r.changed.filter(k => S.fields[k] && S.fields[k].live), later = r.changed.filter(k => S.fields[k] && !S.fields[k].live);
-    toast(!later.length ? "Enregistré et appliqué." : !now.length ? "Enregistré. Ça s'appliquera au redémarrage." : "Enregistré. " + later.length + " réglage(s) attendent le redémarrage.");
+    toast(!later.length ? "Saved and applied." : !now.length ? "Saved. It will apply after the restart." : "Saved. " + plural(later.length, "setting is", "settings are") + " waiting for the restart.");
     (r.warnings || []).forEach(w => toast(w, "bad"));
     if (r.changed.includes("openrouter_api_key") || r.changed.includes("local_base_url")) { providerMsg = null; refreshModels(); }
     refreshSignal();
@@ -735,7 +737,7 @@ function update() { // frappe : met à jour la barre d'enregistrement sans recon
   if (!bar) return;
   bar.hidden = n === 0;
   $(".app").classList.toggle("dirty", n > 0);
-  $("#savecount").textContent = n + (n > 1 ? " modifications non enregistrées" : " modification non enregistrée");
+  $("#savecount").textContent = unsaved(n);
 }
 function render() {
   const root = $("#root");
@@ -743,20 +745,20 @@ function render() {
   const pos = window.scrollY;
   const n = changedKeys().length;
   const nav = PAGES.map(([id, label, , , short]) => {
-    const badge = id === "overview" && S.restart_pending.length ? h("span", { class: "pill warn badge" }, "Redémarrage") : null;
-    return h("button", { class: id === page ? "on" : "", "aria-label": badge ? label + ", redémarrage nécessaire" : label, "aria-current": id === page ? "page" : undefined, onclick: () => { page = id; saveError = ""; history.replaceState(null, "", "#" + id); render(); window.scrollTo(0, 0); if (id === "account") refreshSignal(); if (id === "provider") refreshModels(); } },
+    const badge = id === "overview" && S.restart_pending.length ? h("span", { class: "pill warn badge" }, "Restart") : null;
+    return h("button", { class: id === page ? "on" : "", "aria-label": badge ? label + ", restart needed" : label, "aria-current": id === page ? "page" : undefined, onclick: () => { page = id; saveError = ""; history.replaceState(null, "", "#" + id); render(); window.scrollTo(0, 0); if (id === "account") refreshSignal(); if (id === "provider") refreshModels(); } },
       icon(id), h("span", { class: "lbl" }, label), h("span", { class: "lbl-s" }, short), badge);
   });
-  const themeBtn = (cls, text) => h("button", { class: cls, type: "button", onclick: toggleTheme, "aria-label": "Changer de thème clair ou sombre" }, icon("theme"), text);
+  const themeBtn = (cls, text) => h("button", { class: cls, type: "button", onclick: toggleTheme, "aria-label": "Switch between light and dark theme" }, icon("theme"), text);
   const cur = PAGES.find(p => p[0] === page);
   const bar = h("div", { class: "savebar", id: "savebar", hidden: n === 0 }, h("div", { class: "in" },
-    h("div", null, h("div", { class: "txt", id: "savecount" }, n + (n > 1 ? " modifications non enregistrées" : " modification non enregistrée")), saveError ? h("div", { class: "err" }, saveError) : null),
-    h("div", { class: "row", style: "flex-wrap:nowrap" }, h("button", { class: "btn", onclick: () => { resetDraft(); render(); } }, "Annuler"), h("button", { class: "btn pri", onclick: save }, "Enregistrer"))));
+    h("div", null, h("div", { class: "txt", id: "savecount" }, unsaved(n)), saveError ? h("div", { class: "err" }, saveError) : null),
+    h("div", { class: "row", style: "flex-wrap:nowrap" }, h("button", { class: "btn", onclick: () => { resetDraft(); render(); } }, "Cancel"), h("button", { class: "btn pri", onclick: save }, "Save"))));
   root.replaceChildren(h("div", { class: "app" + (n ? " dirty" : "") },
-    h("aside", { class: "side" }, h("div", { class: "brand" }, h("b", null, "✦"), "Réglages du bot"), h("nav", { "aria-label": "Sections" }, nav),
-      h("div", { class: "foot" }, h("div", { class: "install-slot" }), themeBtn("btn sm ghost", "Clair / sombre"))),
+    h("aside", { class: "side" }, h("div", { class: "brand" }, h("b", null, "✦"), "Signal bot settings"), h("nav", { "aria-label": "Sections" }, nav),
+      h("div", { class: "foot" }, h("div", { class: "install-slot" }), themeBtn("btn sm ghost", "Light / dark"))),
     h("main", null, h("div", { class: "head" }, h("div", null, h("h1", null, cur[1]), h("p", null, cur[2]),
-      page !== "overview" ? h("p", { class: "help", style: "margin-top:2px" }, "Sauf mention contraire, un changement s'applique dès l'enregistrement.") : null),
+      page !== "overview" ? h("p", { class: "help", style: "margin-top:2px" }, "Unless noted otherwise, a change applies as soon as you save.") : null),
       h("div", { class: "head-acts" }, h("div", { class: "install-slot" }), themeBtn("btn ghost icon-btn", null))),
       h("section", { class: "page on" }, cur[3]())), bar));
   fillInstallSlots();

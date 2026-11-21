@@ -66,55 +66,55 @@ SECRETS = {k for k, f in FIELDS.items() if f.kind == "secret"}
 
 
 class ConfigError(ValueError):
-    """A value the page sent is not acceptable; the message is shown to the user, in French."""
+    """A value the page sent is not acceptable; the message is shown to the user, in English."""
 
 
 def coerce(key: str, raw):
     f = FIELDS.get(key)
     if f is None:
-        raise ConfigError(f"Réglage inconnu : {key}")
+        raise ConfigError(f"Unknown setting: {key}")
     k = f.kind
     if k == "bool":
         if isinstance(raw, bool):
             return raw
-        raise ConfigError("Réponse oui ou non attendue.")
+        raise ConfigError("A yes or no answer is expected.")
     if k == "int":
         try:
             n = int(raw)
         except (TypeError, ValueError):
-            raise ConfigError("Un nombre entier est attendu.") from None
+            raise ConfigError("A whole number is expected.") from None
         if not f.minimum <= n <= f.maximum:
-            raise ConfigError(f"Le nombre doit être entre {f.minimum} et {f.maximum}.")
+            raise ConfigError(f"The number must be between {f.minimum} and {f.maximum}.")
         return n
     if k in ("list", "phones"):
         items = raw if isinstance(raw, list) else re.split(r"[,\n]", str(raw or ""))
         out = [str(i).strip() for i in items if str(i).strip()]
         if k == "phones" and (bad := [i for i in out if not (PHONE_RE.match(i) or UUID_RE.match(i))]):
-            raise ConfigError(f"Numéro invalide : {bad[0]} (format international, par exemple +33612345678, "
-                              "ou identifiant Signal pour quelqu'un qui cache son numéro).")
+            raise ConfigError(f"Invalid number: {bad[0]} (international format, for example +33612345678, "
+                              "or a Signal ID for someone who hides their number).")
         return out
     text = str(raw if raw is not None else "").strip()
     if not text:
         if not f.allow_empty:
-            raise ConfigError("Ce champ ne peut pas être vide.")
+            raise ConfigError("This field cannot be empty.")
         return ""
     if k == "url":
         if not re.match(r"^https?://[^\s/]+", text):
-            raise ConfigError("Une adresse commençant par http:// ou https:// est attendue.")
+            raise ConfigError("An address starting with http:// or https:// is expected.")
         return text.rstrip("/")
     if k == "phone" and not PHONE_RE.match(text):
-        raise ConfigError("Numéro invalide : format international attendu, par exemple +33612345678.")
+        raise ConfigError("Invalid number: international format expected, for example +33612345678.")
     if k == "timezone" and text not in available_timezones():
-        raise ConfigError("Fuseau inconnu : utilise un nom comme Europe/Paris.")
+        raise ConfigError("Unknown timezone: use a name like Europe/Paris.")
     if k == "secret" and re.search(r"\s", text):
-        raise ConfigError("Une clé ne contient ni espace ni retour à la ligne.")
+        raise ConfigError("A key contains no space or line break.")
     return text
 
 
 def validate_disabled_tools(names: list[str]) -> list[str]:
     unknown = [n for n in names if n not in TOOL_SWITCHES]
     if unknown:
-        raise ConfigError(f"Outil inconnu : {unknown[0]}")
+        raise ConfigError(f"Unknown tool: {unknown[0]}")
     return sorted(set(names), key=TOOL_SWITCHES.index)
 
 
@@ -144,13 +144,13 @@ def check(effective: Settings) -> list[str]:
 
     Raises ConfigError for the former."""
     if not effective.local_base_url and not effective.openrouter_api_key:
-        raise ConfigError("Il faut au moins un fournisseur : une adresse de serveur local ou une clé OpenRouter.")
+        raise ConfigError("At least one provider is needed: a local server address or an OpenRouter key.")
     warnings = []
     if not effective.openrouter_api_key:
         if effective.image_model:
-            warnings.append("Sans clé OpenRouter, les images ne peuvent pas être créées.")
+            warnings.append("Without an OpenRouter key, images cannot be created.")
         if effective.transcribe_model and not effective.transcribe_base_url:
-            warnings.append("Sans clé OpenRouter, les messages vocaux ne seront pas transcrits.")
+            warnings.append("Without an OpenRouter key, voice messages will not be transcribed.")
     ZoneInfo(effective.timezone)
     return warnings
 

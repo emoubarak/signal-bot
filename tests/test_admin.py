@@ -65,7 +65,7 @@ def client(svc: AdminService, login: bool = True) -> httpx.Client:
 
 def test_page_is_public_but_the_api_is_not(admin):
     c = client(admin, login=False)
-    assert c.get("/").status_code == 200 and "Réglages du bot" in c.get("/").text
+    assert c.get("/").status_code == 200 and "Signal bot settings" in c.get("/").text
     assert c.get("/api/state").status_code == 401
     assert c.put("/api/config", json={}).status_code == 401
     assert c.post("/api/restart").status_code == 401
@@ -77,7 +77,7 @@ def test_wrong_password_is_refused_and_five_tries_lock_the_address(admin):
         assert c.post("/api/login", json={"token": "nope"}).status_code == 401
     assert c.post("/api/login", json={"token": "nope"}).status_code == 401  # 5th: the lock starts after it
     locked = c.post("/api/login", json={"token": TOKEN})  # even the right one waits
-    assert locked.status_code == 429 and "Réessaie" in locked.json()["error"]
+    assert locked.status_code == 429 and "Try again" in locked.json()["error"]
 
 
 def test_session_cookie_is_httponly_and_samesite_strict(admin):
@@ -119,7 +119,7 @@ def test_state_never_contains_a_secret(admin):
 
 def test_the_admin_token_cannot_be_changed_from_the_page(admin):
     r = client(admin).put("/api/config", json={"changes": {"admin_token": "x"}})
-    assert r.status_code == 400 and "inconnu" in r.json()["error"]
+    assert r.status_code == 400 and "Unknown" in r.json()["error"]
 
 
 def test_an_empty_secret_box_keeps_the_key_and_clearing_is_explicit(admin):
@@ -165,16 +165,16 @@ def test_reset_goes_back_to_the_env(admin):
 
 
 @pytest.mark.parametrize("changes,message", [
-    ({"context_messages": 9999}, "entre 1 et 200"),
-    ({"owner_number": "0612"}, "Numéro invalide"),
-    ({"allowed_numbers": ["+33612345678", "bad"]}, "Numéro invalide : bad"),
-    ({"timezone": "Mars/Olympus"}, "Fuseau inconnu"),
+    ({"context_messages": 9999}, "between 1 and 200"),
+    ({"owner_number": "0612"}, "Invalid number"),
+    ({"allowed_numbers": ["+33612345678", "bad"]}, "Invalid number: bad"),
+    ({"timezone": "Mars/Olympus"}, "Unknown timezone"),
     ({"local_base_url": "ftp://x"}, "http://"),
-    ({"bot_name": "  "}, "ne peut pas être vide"),
-    ({"disabled_tools": ["rm_rf"]}, "Outil inconnu"),
-    ({"describe_images": "yes"}, "oui ou non"),
+    ({"bot_name": "  "}, "cannot be empty"),
+    ({"disabled_tools": ["rm_rf"]}, "Unknown tool"),
+    ({"describe_images": "yes"}, "yes or no"),
 ])
-def test_bad_values_are_refused_with_a_message_in_french(admin, changes, message):
+def test_bad_values_are_refused_with_a_message_in_english(admin, changes, message):
     r = client(admin).put("/api/config", json={"changes": changes})
     assert r.status_code == 400 and message in r.json()["error"]
     assert rc.load(admin.store_) == {}   # nothing half saved
@@ -182,7 +182,7 @@ def test_bad_values_are_refused_with_a_message_in_french(admin, changes, message
 
 def test_the_bot_cannot_be_left_without_any_provider(admin):
     r = client(admin).put("/api/config", json={"changes": {"local_base_url": ""}, "clear_secrets": ["openrouter_api_key"]})
-    assert r.status_code == 400 and "au moins un fournisseur" in r.json()["error"]
+    assert r.status_code == 400 and "At least one provider" in r.json()["error"]
     assert admin.live_.local_base_url and admin.live_.openrouter_api_key  # unchanged
 
 
@@ -239,11 +239,11 @@ def test_the_prompt_stops_mentioning_a_switched_off_tool(admin):
 
 def test_state_explains_why_a_tool_does_not_work(admin):
     tools = {t["name"]: t for t in client(admin).get("/api/state").json()["tools"]}
-    assert tools["send_gif"]["reason"] == "Il manque la clé Klipy." and not tools["send_gif"]["working"]
+    assert tools["send_gif"]["reason"] == "The Klipy key is missing." and not tools["send_gif"]["working"]
     assert tools["calculate"]["working"] and tools["get_history"]["locked"]
     client(admin).put("/api/config", json={"changes": {"web_tools": False}})
     tools = {t["name"]: t for t in client(admin).get("/api/state").json()["tools"]}
-    assert "interrupteur général" in tools["calculate"]["reason"]
+    assert "master switch" in tools["calculate"]["reason"]
 
 
 def test_a_tool_can_be_tried_from_the_page(admin):
@@ -327,7 +327,7 @@ async def test_closing_the_client_closes_the_retired_ones_too():
 def test_the_page_file_ships_with_the_package():
     from llmbot.admin import PAGE
     html = PAGE.read_text()
-    assert "<title>Réglages du bot</title>" in html and "sk-or" not in html
+    assert "<title>Signal bot settings</title>" in html and "sk-or" not in html
 
 
 def test_the_real_handler_picks_up_a_new_name_and_timezone():

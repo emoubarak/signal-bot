@@ -52,22 +52,22 @@ LOGIN_FAILS = 5
 LOGIN_LOCK_SECONDS = 60
 CATALOG_TTL = 1800
 
-# label, one-line help (French: this page is read by a person), group
+# label, one-line help (English: this page is read by a person), group
 TOOL_INFO = {
-    "generate_image": ("Créer des images", "Dessine ou retouche une image à la demande. Payant, à l'image, via OpenRouter.", "Images"),
-    "send_gif": ("Envoyer un GIF", "Réagit avec un GIF animé trouvé sur Klipy. Gratuit.", "Images"),
-    "make_meme": ("Faire un meme", "Répond avec un meme (Drake, Distracted Boyfriend…) légendé sur le sujet demandé, avec memegen.link. Gratuit.", "Images"),
-    "web_search": ("Chercher sur internet", "Trouve une info récente (score, prix, actualité) avec DuckDuckGo. Gratuit.", "Internet"),
-    "read_page": ("Lire un lien", "Lit une page web collée dans le groupe pour la résumer. Gratuit.", "Internet"),
-    "get_weather": ("Météo", "Météo du jour et des trois prochains jours pour une ville, avec Open-Meteo. Gratuit.", "Internet"),
-    "get_time": ("Heure ailleurs", "Donne l'heure qu'il est dans une autre ville du monde.", "Utilitaires"),
-    "calculate": ("Calculatrice", "Fait les calculs exactement : addition au resto, pourcentages, conversions.", "Utilitaires"),
-    "pick_random": ("Tirer au sort", "Pile ou face, dé, choix au hasard entre plusieurs options : le modèle ne sait pas faire le hasard seul.", "Utilitaires"),
-    "search_messages": ("Retrouver un message", "Cherche par mots-clés ce que quelqu'un a dit plus tôt dans la conversation.", "Conversation"),
-    "remind": ("Rappels", "Programme un message dans le groupe à une heure donnée (« rappelle-nous à 20 h »). Les rappels survivent à un redémarrage.", "Conversation"),
-    "get_spend": ("Coût du bot", "Dit combien le bot a coûté aujourd'hui et sur 30 jours.", "Utilitaires"),
+    "generate_image": ("Create images", "Draws or edits an image on request. Paid per image, through OpenRouter.", "Images"),
+    "send_gif": ("Send a GIF", "Reacts with an animated GIF found on Klipy. Free.", "Images"),
+    "make_meme": ("Make a meme", "Replies with a meme (Drake, Distracted Boyfriend…) captioned on the requested subject, using memegen.link. Free.", "Images"),
+    "web_search": ("Search the web", "Finds recent information (scores, prices, news) with DuckDuckGo. Free.", "Internet"),
+    "read_page": ("Read a link", "Reads a web page pasted in the group to summarise it. Free.", "Internet"),
+    "get_weather": ("Weather", "Weather for today and the next three days for a city, with Open-Meteo. Free.", "Internet"),
+    "get_time": ("Time elsewhere", "Tells the time in another city of the world.", "Utilities"),
+    "calculate": ("Calculator", "Does the maths exactly: splitting a restaurant bill, percentages, conversions.", "Utilities"),
+    "pick_random": ("Pick at random", "Coin flip, dice, a random choice between several options: the model cannot do randomness on its own.", "Utilities"),
+    "search_messages": ("Find a message", "Searches by keywords for what someone said earlier in the conversation.", "Conversation"),
+    "remind": ("Reminders", "Schedules a message in the group at a given time (\u201cremind us at 8 pm\u201d). Reminders survive a restart.", "Conversation"),
+    "get_spend": ("Bot cost", "Says how much the bot has cost today and over 30 days.", "Utilities"),
 }
-ALWAYS_ON = ("get_history", "Relire l'historique", "Retrouve ce qui s'est dit plus tôt dans le groupe.", "Utilitaires")
+ALWAYS_ON = ("get_history", "Reread the history", "Finds what was said earlier in the group.", "Utilities")
 
 
 class _Server(ThreadingHTTPServer):
@@ -157,7 +157,7 @@ class AdminService:
         with self._lock:
             fails, until = self._fails.get(ip, (0, 0.0))
             if until > now:
-                raise PermissionError(f"Trop d'essais. Réessaie dans {int(until - now) + 1} s.")
+                raise PermissionError(f"Too many attempts. Try again in {int(until - now) + 1} s.")
             expected = self.live.admin_token.encode()
             if expected and hmac.compare_digest(token.encode(), expected):
                 self._fails.pop(ip, None)
@@ -238,11 +238,11 @@ class AdminService:
             reason = ""
             if wanted and name not in offered:
                 if name == "generate_image":
-                    reason = "Choisis un modèle d'image dans Fournisseur."
+                    reason = "Pick an image model under Provider."
                 elif name == "send_gif":
-                    reason = "Il manque la clé Klipy."
+                    reason = "The Klipy key is missing."
                 elif name in {t["function"]["name"] for t in webtools.TOOLS} | {"make_meme"}:
-                    reason = "Les outils internet sont éteints (interrupteur général)."
+                    reason = "Web tools are switched off (master switch)."
             out.append({"name": name, "label": label, "help": help_, "group": group, "enabled": wanted,
                         "locked": False, "reason": reason, "working": name in offered})
         return out
@@ -254,11 +254,11 @@ class AdminService:
             overrides = rc.load(self.store)
             for key in body.get("reset") or []:
                 if key not in rc.FIELDS:
-                    raise rc.ConfigError(f"Réglage inconnu : {key}")
+                    raise rc.ConfigError(f"Unknown setting: {key}")
                 overrides.pop(key, None)
             for key in body.get("clear_secrets") or []:
                 if key not in rc.SECRETS:
-                    raise rc.ConfigError(f"Ce réglage n'est pas une clé : {key}")
+                    raise rc.ConfigError(f"This setting is not an API key: {key}")
                 overrides[key] = ""
             for key, raw in (body.get("changes") or {}).items():
                 value = rc.coerce(key, raw)
@@ -305,18 +305,18 @@ class AdminService:
                 body = r.json()
                 data = body.get("data") if isinstance(body, dict) else None
                 models = sorted({m.get("id") for m in (data if isinstance(data, list) else []) if isinstance(m, dict) and m.get("id")})
-                return {"ok": True, "message": f"Le serveur répond ({len(models)} modèle(s) disponible(s)).", "models": models}
+                return {"ok": True, "message": f"The server responds ({len(models)} model{'' if len(models) == 1 else 's'} available).", "models": models}
             if not key:
-                return {"ok": False, "message": "Aucune clé OpenRouter à essayer."}
+                return {"ok": False, "message": "No OpenRouter key to try."}
             r = httpx.get(BASE_URL + "/key", headers={"Authorization": f"Bearer {key}"}, timeout=8)
             if r.status_code in (401, 403):
-                return {"ok": False, "message": "OpenRouter refuse cette clé."}
+                return {"ok": False, "message": "OpenRouter rejects this key."}
             r.raise_for_status()
-            return {"ok": True, "message": "OpenRouter accepte la clé.", "models": []}
+            return {"ok": True, "message": "OpenRouter accepts the key.", "models": []}
         except rc.ConfigError as e:
             return {"ok": False, "message": str(e)}
         except (httpx.HTTPError, ValueError) as e:
-            return {"ok": False, "message": f"Pas de réponse ({type(e).__name__}). Vérifie l'adresse et que le serveur tourne."}
+            return {"ok": False, "message": f"No response ({type(e).__name__}). Check the address and that the server is running."}
 
     def models_catalog(self) -> dict:
         """Model ids OpenRouter offers, for the suggestions in the model boxes (cached)."""
@@ -348,23 +348,23 @@ class AdminService:
         s = self.live.snapshot
         if name == "get_spend":
             db_day = int((time.time() - 86400) * 1000)
-            return {"ok": True, "text": f"Dernières 24 h : {self.store.cost_since(db_day):.3f} $."}
+            return {"ok": True, "text": f"Last 24 h: ${self.store.cost_since(db_day):.3f}."}
         if name == "send_gif":
             if not s.klipy_api_key:
-                return {"ok": False, "text": "Il manque la clé Klipy."}
+                return {"ok": False, "text": "The Klipy key is missing."}
             data, message = asyncio.run(webtools.find_gif(text or "hello", s.klipy_api_key))
             if data is None:
                 return {"ok": False, "text": message}
-            return {"ok": True, "text": f"GIF trouvé ({len(data) // 1024} Ko).",
+            return {"ok": True, "text": f"GIF found ({len(data) // 1024} KB).",
                     "gif": "data:image/gif;base64," + base64.b64encode(data).decode() if len(data) < 3_000_000 else None}
         if name == "make_meme":
             data, message = asyncio.run(webtools.make_meme("drake", [x.strip() for x in text.split(",")][:2]))
             if data is None:
                 return {"ok": False, "text": message}
-            return {"ok": True, "text": f"Meme fait ({len(data) // 1024} Ko).",
+            return {"ok": True, "text": f"Meme made ({len(data) // 1024} KB).",
                     "gif": "data:image/png;base64," + base64.b64encode(data).decode()}
         if name not in {t["function"]["name"] for t in webtools.TOOLS}:
-            return {"ok": False, "text": "Cet outil ne s'essaie pas d'ici."}
+            return {"ok": False, "text": "This tool cannot be tried from here."}
         if name == "pick_random":
             args = {"choices": [c.strip() for c in text.split(",") if c.strip()]}
         else:
@@ -451,11 +451,11 @@ class _Handler(BaseHTTPRequestHandler):
             n = -1
         if not 0 <= n <= MAX_BODY:
             self.close_connection = True   # the body is not read: this connection cannot be reused
-            raise rc.ConfigError("Requête invalide.")
+            raise rc.ConfigError("Invalid request.")
         raw = self.rfile.read(n) if n else b"{}"
         data = json.loads(raw or b"{}")
         if not isinstance(data, dict):
-            raise rc.ConfigError("Requête invalide.")
+            raise rc.ConfigError("Invalid request.")
         return data
 
     def _session(self) -> str | None:
@@ -498,7 +498,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(200, (PAGE.parent / name).read_bytes(), ctype)
             return
         if not self._authed():
-            self._json(401, {"error": "Connexion requise."})
+            self._json(401, {"error": "Sign-in required."})
             return
         if path == "/api/state":
             self._json(200, self.admin.state())
@@ -509,11 +509,11 @@ class _Handler(BaseHTTPRequestHandler):
         elif path == "/api/signal/qr":
             png = self.admin.signal_qr()
             if png is None:
-                self._json(502, {"error": "Le QR code n'est pas disponible (signal-cli ne répond pas)."})
+                self._json(502, {"error": "The QR code is not available (signal-cli is not responding)."})
             else:
                 self._send(200, png, "image/png")
         else:
-            self._json(404, {"error": "Introuvable."})
+            self._json(404, {"error": "Not found."})
 
     def do_POST(self) -> None:
         self._write("POST")
@@ -526,7 +526,7 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             body = self._body()  # always read the body first: an unread one would be taken for the next request
             if not self._same_site():
-                self._json(403, {"error": "Requête refusée."})
+                self._json(403, {"error": "Request refused."})
                 return
             if path == "/api/login" and method == "POST":
                 ip = self._client_ip()
@@ -536,7 +536,7 @@ class _Handler(BaseHTTPRequestHandler):
                     self._json(429, {"error": str(e)})
                     return
                 if sid is None:
-                    self._json(401, {"error": "Mot de passe incorrect."})
+                    self._json(401, {"error": "Wrong password."})
                     return
                 cookie = f"{COOKIE}={sid}; Path=/; HttpOnly; SameSite=Strict; Max-Age={SESSION_SECONDS}"
                 if self._https():
@@ -544,7 +544,7 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json(200, {"ok": True}, {"Set-Cookie": cookie})
                 return
             if not self._authed():
-                self._json(401, {"error": "Connexion requise."})
+                self._json(401, {"error": "Sign-in required."})
                 return
             if path == "/api/logout" and method == "POST":
                 self.admin.logout(self._session())
@@ -560,11 +560,11 @@ class _Handler(BaseHTTPRequestHandler):
                 self.admin.restart()
                 self._json(200, {"ok": True})
             else:
-                self._json(404, {"error": "Introuvable."})
+                self._json(404, {"error": "Not found."})
         except rc.ConfigError as e:
             self._json(400, {"error": str(e)})
         except json.JSONDecodeError:
-            self._json(400, {"error": "Requête invalide."})
+            self._json(400, {"error": "Invalid request."})
         except Exception:
             logger.exception("admin request failed")
-            self._json(500, {"error": "Erreur inattendue, voir les journaux du bot."})
+            self._json(500, {"error": "Unexpected error, see the bot's logs."})

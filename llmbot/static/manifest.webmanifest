@@ -1,9 +1,9 @@
 {
   "id": "/",
-  "name": "Réglages du bot Signal",
-  "short_name": "Bot Signal",
-  "description": "Modèle, outils, compte Signal et limites du bot Signal",
-  "lang": "fr",
+  "name": "Signal bot settings",
+  "short_name": "Signal bot",
+  "description": "Model, tools, Signal account and limits of the Signal bot",
+  "lang": "en",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
