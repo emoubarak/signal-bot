@@ -168,27 +168,38 @@ MODEL_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 MAX_IMAGE_BYTES = 3_000_000
 
 
-def image_for_model(data: bytes, content_type: str | None) -> tuple[bytes, str]:
+def image_for_model(data: bytes, content_type: str | None) -> tuple[bytes, str] | None:
     """Images as the models accept them: JPEG/PNG/WebP, at most ~3 MB and 2048 px.
-    Anything else (GIF, HEIC, huge photos) is re-encoded with ffmpeg; on failure
-    the original is returned."""
+    Anything else (GIF, HEIC, huge photos) is re-encoded with ffmpeg. When that fails, an image that is
+    too big but of an accepted type goes out as it is; any other type (SVG, TIFF) cannot be sent at all
+    (the server would reject the whole request, and a reply thread resends its images every time): None.
+    Blocking (ffmpeg, up to 30 s): call it through `load_image` from async code."""
     ct = (content_type or "").lower()
     if ct in MODEL_IMAGE_TYPES and len(data) <= MAX_IMAGE_BYTES:
         return data, ct
-    if not ffmpeg_available():
-        return data, ct or "image/jpeg"
-    try:
-        out = subprocess.run(
-            ["ffmpeg", "-loglevel", "error", "-i", "pipe:0", "-frames:v", "1",
-             "-vf", "scale='min(2048,iw)':'min(2048,ih)':force_original_aspect_ratio=decrease",
-             "-q:v", "4", "-f", "image2", "-c:v", "mjpeg", "pipe:1"],
-            input=data, capture_output=True, timeout=30, check=True,
-        ).stdout
-        if out:
-            return out, "image/jpeg"
-    except Exception as e:
-        logger.warning("image re-encoding failed: %s", e)
-    return data, ct or "image/jpeg"
+    if ffmpeg_available():
+        try:
+            out = subprocess.run(
+                ["ffmpeg", "-loglevel", "error", "-i", "pipe:0", "-frames:v", "1",
+                 "-vf", "scale='min(2048,iw)':'min(2048,ih)':force_original_aspect_ratio=decrease",
+                 "-q:v", "4", "-f", "image2", "-c:v", "mjpeg", "pipe:1"],
+                input=data, capture_output=True, timeout=30, check=True,
+            ).stdout
+            if out:
+                return out, "image/jpeg"
+        except Exception as e:
+            logger.warning("image re-encoding failed: %s", e)
+    return (data, ct) if ct in MODEL_IMAGE_TYPES else None
+
+
+async def load_image(data: bytes, content_type: str | None) -> tuple[bytes, str] | None:
+    """`image_for_model` off the event loop: ffmpeg takes seconds, and reception, reminders and the other
+    chats must not wait for it."""
+    return await asyncio.to_thread(image_for_model, data, content_type)
+
+
+async def load_signal_image(data: bytes, content_type: str | None) -> tuple[bytes, str]:
+    return await asyncio.to_thread(image_for_signal, data, content_type)
 
 
 def image_for_signal(data: bytes, content_type: str | None) -> tuple[bytes, str]:

@@ -50,7 +50,9 @@ CREATE TABLE IF NOT EXISTS reminders (
     message      TEXT    NOT NULL,
     created_ts   INTEGER NOT NULL,
     attempts     INTEGER NOT NULL DEFAULT 0,
-    done         INTEGER NOT NULL DEFAULT 0
+    done         INTEGER NOT NULL DEFAULT 0,
+    failed       INTEGER NOT NULL DEFAULT 0,
+    next_try_ts  INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS reminders_due ON reminders (done, due_ts);
 
@@ -106,6 +108,18 @@ class Store:
         self._db = sqlite3.connect(str(path), check_same_thread=False)
         self._db.row_factory = sqlite3.Row
         self._db.executescript(_SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Columns added after a database was first created."""
+        have = {r["name"] for r in self._db.execute("PRAGMA table_info(reminders)")}
+        for column in ("failed", "next_try_ts"):
+            if column not in have:
+                self._db.execute(f"ALTER TABLE reminders ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0")
+                if column == "failed":
+                    # reminders the old version had given up on (5 attempts) must not come back to life
+                    self._db.execute("UPDATE reminders SET failed=1 WHERE done=0 AND attempts>=5")
+        self._db.commit()
 
     def close(self) -> None:
         self._db.close()
@@ -127,6 +141,45 @@ class Store:
         )
         self._db.commit()
         return cur.rowcount > 0
+
+    def update_message(self, chat_id: str, ts: int, author_id: str, text: str, attachments: list[dict]) -> bool:
+        cur = self._db.execute(
+            "UPDATE messages SET text=?, attachments=? WHERE chat_id=? AND ts=? AND author_id=?",
+            (text, json.dumps(attachments), chat_id, ts, author_id),
+        )
+        self._db.commit()
+        return cur.rowcount > 0
+
+    def delete_message(self, chat_id: str, ts: int, author_ids: set[str]) -> list[dict] | None:
+        """Remove a message its author deleted for everyone. Returns its attachments (the caller removes the
+        files), or None when no message of one of `author_ids` is stored at that time."""
+        for author_id in author_ids:
+            row = self._db.execute(
+                "SELECT attachments FROM messages WHERE chat_id=? AND ts=? AND author_id=?", (chat_id, ts, author_id)
+            ).fetchone()
+            if row is None:
+                continue
+            self._db.execute("DELETE FROM messages WHERE chat_id=? AND ts=? AND author_id=?", (chat_id, ts, author_id))
+            self._db.commit()
+            return json.loads(row["attachments"] or "[]")
+        return None
+
+    def has_reply(self, chat_id: str, ts: int, bot_id: str) -> bool:
+        """Whether the bot (author `bot_id`) already answered the message at `ts`, with text or with an image."""
+        row = self._db.execute(
+            "SELECT 1 FROM messages WHERE chat_id=? AND reply_to_ts=? AND author_id=? LIMIT 1", (chat_id, ts, bot_id)
+        ).fetchone()
+        return row is not None
+
+    def has_posted_in(self, author_id: str, chat_ids: set[str]) -> bool:
+        """Whether this author wrote in one of these chats (a member of a group, as far as the bot has seen)."""
+        if not chat_ids:
+            return False
+        marks = ",".join("?" * len(chat_ids))
+        row = self._db.execute(
+            f"SELECT 1 FROM messages WHERE author_id=? AND chat_id IN ({marks}) LIMIT 1", (author_id, *chat_ids)
+        ).fetchone()
+        return row is not None
 
     def get(self, chat_id: str, ts: int) -> StoredMessage | None:
         row = self._db.execute(
@@ -214,18 +267,27 @@ class Store:
         return int(cur.lastrowid)
 
     def pending_reminders(self, chat_id: str) -> list[sqlite3.Row]:
-        return self._db.execute("SELECT * FROM reminders WHERE chat_id=? AND done=0 ORDER BY due_ts", (chat_id,)).fetchall()
+        return self._db.execute(
+            "SELECT * FROM reminders WHERE chat_id=? AND done=0 AND failed=0 ORDER BY due_ts", (chat_id,)).fetchall()
 
-    def due_reminders(self, now_ts: int, max_attempts: int = 5) -> list[sqlite3.Row]:
-        return self._db.execute("SELECT * FROM reminders WHERE done=0 AND due_ts<=? AND attempts<? ORDER BY due_ts",
-                                (now_ts, max_attempts)).fetchall()
+    def due_reminders(self, now_ts: int) -> list[sqlite3.Row]:
+        """Reminders to post now: due, not sent, not given up, and past their pause after a failed attempt."""
+        return self._db.execute(
+            "SELECT * FROM reminders WHERE done=0 AND failed=0 AND due_ts<=? AND next_try_ts<=? ORDER BY due_ts",
+            (now_ts, now_ts)).fetchall()
 
     def finish_reminder(self, reminder_id: int) -> None:
         self._db.execute("UPDATE reminders SET done=1 WHERE id=?", (reminder_id,))
         self._db.commit()
 
-    def reminder_failed(self, reminder_id: int) -> None:
-        self._db.execute("UPDATE reminders SET attempts=attempts+1 WHERE id=?", (reminder_id,))
+    def reminder_failed(self, reminder_id: int, retry_at: int | None) -> None:
+        """One more failed attempt: try again from `retry_at`, or for good (`None`: marked failed, no longer
+        waiting)."""
+        if retry_at is None:
+            self._db.execute("UPDATE reminders SET attempts=attempts+1, failed=1 WHERE id=?", (reminder_id,))
+        else:
+            self._db.execute("UPDATE reminders SET attempts=attempts+1, next_try_ts=? WHERE id=?",
+                             (retry_at, reminder_id))
         self._db.commit()
 
     def cancel_reminder(self, chat_id: str, reminder_id: int) -> bool:
@@ -235,11 +297,17 @@ class Store:
 
     # ── usage / rate limiting ───────────────────────────────────────────────
 
-    def add_usage(self, chat_id: str, user_id: str, kind: str, model: str, cost: float) -> None:
-        self._db.execute(
+    def add_usage(self, chat_id: str, user_id: str, kind: str, model: str, cost: float) -> int:
+        cur = self._db.execute(
             "INSERT INTO usage VALUES (?,?,?,?,?,?)",
             (int(time.time() * 1000), chat_id, user_id, kind, model, cost or 0.0),
         )
+        self._db.commit()
+        return int(cur.lastrowid)
+
+    def update_usage(self, rowid: int, model: str, cost: float) -> None:
+        """Fill in a usage reserved before the call (see add_usage) with what it really cost."""
+        self._db.execute("UPDATE usage SET model=?, cost=? WHERE rowid=?", (model, cost or 0.0, rowid))
         self._db.commit()
 
     def count_usage(self, user_id: str, kind: str, since_ts: int) -> int:

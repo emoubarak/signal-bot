@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -15,7 +16,7 @@ from llmbot import prompts, reminders, webtools
 from llmbot.personas import Registry
 from llmbot.config import Settings
 from llmbot.context import fmt_time, format_message
-from llmbot.media import image_for_model, image_for_signal
+from llmbot.media import load_image, load_signal_image
 from llmbot.openrouter import OpenRouter, OpenRouterError, data_url
 from llmbot.store import Store, StoredMessage
 
@@ -64,6 +65,8 @@ WINDOW_LINES = 12
 SHOWN_GAP_MS = 30 * 60 * 1000   # a pause this long inside the window is written as "(40 min later)"
 HISTORY_OWN_WORDS = 25          # and in what get_history and search_messages return
 OWN_WORDS = 12                  # the bot's earlier replies in the window: their first words only
+MAX_IMAGES = 6                  # images sent to the model in one call, the latest first (3 per message at most)
+PENDING_IMAGE = "pending_image"  # placeholder of an image part, filled in by Agent._load_images
 THREAD_TURNS = 7                # the end of the reply chain with the bot: at most 3 of its own replies
 
 
@@ -308,6 +311,8 @@ class AgentRequest:
     # Timestamp of the last /clear in this chat: nothing before it is shown to the
     # model, and get_history cannot reach past it. None = never cleared.
     context_start: int | None = None
+    # Called each time the model has answered a call (the handler's "model is loading" notice stops there)
+    on_model_reply: Callable[[], None] | None = None
 
 
 class Agent:
@@ -508,12 +513,32 @@ class Agent:
                 text += f"\n\n(Your reply: at most {budget} words.)"
             content: list[dict] = [{"type": "text", "text": text}]
             for img in (m.images() + (quoted.images() if is_last and quoted and not quoted_in_thread else []))[-3:]:
-                path = Path(img["path"])
-                if path.exists():
-                    data, mt = image_for_model(path.read_bytes(), img["content_type"])
-                    content.append({"type": "image_url", "image_url": {"url": data_url(data, mt)}})
+                if Path(img["path"]).exists():  # read and converted by _load_images, off the event loop
+                    content.append({"type": PENDING_IMAGE, "path": img["path"], "content_type": img["content_type"]})
             messages.append({"role": "user", "content": content})
         return messages
+
+    async def _load_images(self, messages: list[dict]) -> None:
+        """Turn the image placeholders left by _build_messages into image parts: the latest MAX_IMAGES
+        only, each converted off the event loop. One that cannot be read is replaced by a note instead of
+        failing the whole request."""
+        slots = [(content, part) for m in messages if isinstance(m.get("content"), list)
+                 for content in [m["content"]] for part in content if part.get("type") == PENDING_IMAGE]
+        keep = {id(part) for _, part in slots[-MAX_IMAGES:]}
+        for content, part in slots:
+            loaded = None
+            if id(part) in keep:
+                try:
+                    loaded = await load_image(Path(part["path"]).read_bytes(), part["content_type"])
+                except OSError:
+                    loaded = None
+            if loaded is None and id(part) in keep:
+                replacement = {"type": "text", "text": "[unreadable image]"}
+            elif loaded is None:
+                replacement = {"type": "text", "text": "[older image not shown]"}
+            else:
+                replacement = {"type": "image_url", "image_url": {"url": data_url(*loaded)}}
+            content[content.index(part)] = replacement
 
     # ── tools ───────────────────────────────────────────────────────────────
 
@@ -552,8 +577,10 @@ class Agent:
             unknown = []
             for key in args.get("reference_images") or []:
                 img = images.get(str(key))
-                if img and Path(img["path"]).exists():
-                    refs.append(image_for_model(Path(img["path"]).read_bytes(), img["content_type"]))
+                loaded = (await load_image(Path(img["path"]).read_bytes(), img["content_type"])
+                          if img and Path(img["path"]).exists() else None)
+                if loaded is not None:
+                    refs.append(loaded)
                 else:
                     unknown.append(str(key))
             if unknown:
@@ -566,7 +593,7 @@ class Agent:
                                                     aspect_ratio=ratio, references=refs[:8] or None)
             except OpenRouterError as e:
                 return f"Generation failed: {e}"
-            result.images.append(image_for_signal(out.data, out.media_type))
+            result.images.append(await load_signal_image(out.data, out.media_type))
             result.image_costs.append((out.model, out.cost))
             return "Image generated, it will be sent with your reply. Now reply with a short caption."
 
@@ -688,6 +715,7 @@ class Agent:
         cls = length_class(asked.text if asked else "", with_image=bool(
             (asked and asked.images()) or (req.quoted and req.quoted.images())))
         messages = self._build_messages(req, images, budget=BUDGETS[cls])
+        await self._load_images(messages)
         result = AgentResult(text="", chat_model=chat_model)
         tools = tools_for(self.settings)
         offered: list[dict] | None = tools
@@ -707,6 +735,8 @@ class Agent:
                                         tools=offered)
             result.chat_cost += reply.cost
             result.chat_model = reply.model
+            if req.on_model_reply is not None:
+                req.on_model_reply()
             if offered is not None and not reply.tool_calls and "<tool_call>" in (reply.text or ""):
                 # written as text, not recognised by the server: run it anyway. Not when no tools were
                 # offered (a shorter rewrite): nothing may run twice, a paid image least of all

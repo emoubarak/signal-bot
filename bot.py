@@ -98,10 +98,12 @@ def main() -> None:
         log.info("admin page is off (set ADMIN_TOKEN to turn it on)")
     bot.register(
         handler,
-        contacts=settings.allowed_numbers or True,
+        # the owner is always let in: the handler decides who else (_may_talk)
+        contacts=[*settings.allowed_numbers, settings.owner_number] if settings.allowed_numbers and settings.owner_number
+        else (settings.allowed_numbers or True),
         groups=settings.allowed_groups or True,
     )
-    bot.register(ReminderService(store))  # posts the reminders that come due, also after a restart
+    bot.register(ReminderService(store, settings))  # posts the reminders that come due, also after a restart
     if settings.announce_startup:
         # handle_ready runs once, after the groups are resolved: the announcement
         # can then name the model that actually serves it

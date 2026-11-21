@@ -148,12 +148,12 @@ async def test_list_and_cancel_reminders(clock):
 # ── reminders: delivering them ──────────────────────────────────────────────
 
 class FakeBot:
-    def __init__(self, fail=False):
-        self.sent, self.fail = [], fail
+    def __init__(self, fail=False, only=None):
+        self.sent, self.fail, self.only = [], fail, only  # `only`: fail for these recipients alone
         self.messages = SimpleNamespace(send=self._send)
 
     async def _send(self, message, recipient):
-        if self.fail:
+        if self.fail and (self.only is None or recipient in self.only):
             raise ConnectionError("signal-cli down")
         self.sent.append((message.text, recipient))
 
@@ -178,15 +178,51 @@ async def test_a_reminder_missed_while_offline_is_posted_with_an_apology():
     assert bot.sent[0][0] == "⏰ Call the plumber (sorry, late: I was offline)"
 
 
-async def test_a_reminder_is_retried_then_given_up():
+async def test_a_reminder_is_retried_with_growing_pauses_then_given_up():
+    store = Store()
+    store.add_reminder("g", "u1", "Karim", NOW_MS, "x", NOW_MS)
+    settings = SimpleNamespace(phone_number="+33700000000", bot_name="Jarvis", owner_number="+33699999999")
+    service, bot = reminders.ReminderService(store, settings), FakeBot(fail=True, only={"g"})
+    now = NOW_MS + 1000
+    for pause in reminders.RETRY_PAUSES:
+        assert await service.deliver_due(bot, now_ms=now) == 0               # attempt fails
+        assert store.pending_reminders("g")                                  # still waiting
+        assert store.due_reminders(now + pause * 1000 - 1) == []             # not before its pause
+        now += pause * 1000
+    assert sum(reminders.RETRY_PAUSES) >= 3500                               # about an hour in all
+    bot.fail = False
+    assert await service.deliver_due(bot, now_ms=now - 1) == 0               # (still paused)
+    bot.fail = True
+    assert await service.deliver_due(bot, now_ms=now) == 0                   # the last attempt fails: given up
+    assert store.pending_reminders("g") == []                                # no longer listed as waiting
+    assert store._db.execute("SELECT failed FROM reminders").fetchone()[0] == 1
+    bot.fail = False
+    assert await service.deliver_due(bot, now_ms=now + 10_000_000) == 0      # and never tried again
+    assert [t for t, to in bot.sent if to == "+33699999999"][0].startswith("A reminder for Karim could not be posted")
+
+
+async def test_a_reminder_that_failed_once_is_posted_on_the_next_try():
     store = Store()
     store.add_reminder("g", "u1", "Karim", NOW_MS, "x", NOW_MS)
     service, bot = reminders.ReminderService(store), FakeBot(fail=True)
-    for _ in range(8):
-        assert await service.deliver_due(bot, now_ms=NOW_MS + 1000) == 0
-    assert store._db.execute("SELECT attempts FROM reminders").fetchone()[0] == 5   # then it stops trying
-    bot.fail = False
     assert await service.deliver_due(bot, now_ms=NOW_MS + 1000) == 0
+    bot.fail = False
+    assert await service.deliver_due(bot, now_ms=NOW_MS + 1000 + reminders.RETRY_PAUSES[0] * 1000) == 1
+
+
+async def test_a_posted_reminder_is_a_bot_message_so_a_reply_reaches_the_bot():
+    store = Store()
+    store.add_reminder("g", "u1", "Karim", NOW_MS, "call", NOW_MS)
+    settings = SimpleNamespace(phone_number="+33700000000", bot_name="Jarvis", owner_number="")
+    bot = FakeBot()
+    bot.messages = SimpleNamespace(send=lambda m, r: _posted(777))
+    await reminders.ReminderService(store, settings).deliver_due(bot, now_ms=NOW_MS + 1000)
+    stored = store.get("g", 777)
+    assert stored.is_bot and stored.text == "⏰ call" and stored.author_id == "+33700000000"
+
+
+async def _posted(ts):
+    return SimpleNamespace(timestamp=ts)
 
 
 async def test_reminders_survive_a_restart(tmp_path):

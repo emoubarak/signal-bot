@@ -147,12 +147,13 @@ def sync_message(text: str, *, to_user=None, ts: int | None = None) -> Envelope:
     return Envelope(json.dumps(env))
 
 
-def edit_message(user, new_text: str, target_ts: int) -> Envelope:
+def edit_message(user, new_text: str, target_ts: int, server_ts: int | None = None) -> Envelope:
     number, uid, name = user
     ts = _new_timestamp()
+    server_ts = server_ts or ts
     env = {"account": BOT_NUMBER, "envelope": {
         "source": number, "sourceNumber": number, "sourceUuid": uid, "sourceName": name, "sourceDevice": 1,
-        "timestamp": ts, "serverReceivedTimestamp": ts, "serverDeliveredTimestamp": ts,
+        "timestamp": ts, "serverReceivedTimestamp": server_ts, "serverDeliveredTimestamp": ts,
         "editMessage": {"targetSentTimestamp": target_ts, "dataMessage": {
             "timestamp": ts, "message": new_text, "expiresInSeconds": 0, "viewOnce": False,
             "groupInfo": {"groupId": GROUP_INTERNAL, "type": "DELIVER", "revision": 1}}}}}

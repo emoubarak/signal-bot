@@ -15,6 +15,8 @@ from llmbot.store import Store
 
 OVERRIDES_KEY = "config_overrides"
 PHONE_RE = re.compile(r"^\+\d{6,15}$")
+# A Signal id: what a message carries instead of a number when the person hides theirs.
+UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 # Every tool the page can switch off, as the model sees its name.
 TOOL_SWITCHES = ["generate_image", "send_gif", "make_meme", "get_spend", "web_search", "read_page", "get_weather", "get_time",
@@ -87,8 +89,9 @@ def coerce(key: str, raw):
     if k in ("list", "phones"):
         items = raw if isinstance(raw, list) else re.split(r"[,\n]", str(raw or ""))
         out = [str(i).strip() for i in items if str(i).strip()]
-        if k == "phones" and (bad := [i for i in out if not PHONE_RE.match(i)]):
-            raise ConfigError(f"Numéro invalide : {bad[0]} (format international, par exemple +33612345678).")
+        if k == "phones" and (bad := [i for i in out if not (PHONE_RE.match(i) or UUID_RE.match(i))]):
+            raise ConfigError(f"Numéro invalide : {bad[0]} (format international, par exemple +33612345678, "
+                              "ou identifiant Signal pour quelqu'un qui cache son numéro).")
         return out
     text = str(raw if raw is not None else "").strip()
     if not text:

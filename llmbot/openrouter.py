@@ -26,6 +26,8 @@ IMAGE_DEADLINE = 150.0
 LOCAL_CHAT_DEADLINE = 300.0
 # A local speech server reads a minute of voice in a few seconds on a CPU.
 LOCAL_STT_DEADLINE = 60.0
+# A server that answers 503 is starting (llama-swap loading a model): one more try after this pause.
+LOCAL_RETRY_PAUSE = 5.0
 
 
 class OpenRouterError(Exception):
@@ -87,6 +89,9 @@ class OpenRouter:
         # clients replaced by reconfigure(): requests in flight may still use them, closed with the bot
         self._retired: list[httpx.AsyncClient] = []
         self._models: dict[str, ModelInfo] | None = None
+        # A local server serves one request at a time (and a model swap can take minutes): chat calls take
+        # turns, and a call's deadline starts when its turn does, not while it waits behind another.
+        self._local_turn = asyncio.Semaphore(1)
         self._build(api_key, base_url, local, client)
 
     def _build(self, api_key: str, base_url: str, local: bool, client: httpx.AsyncClient | None = None) -> None:
@@ -168,6 +173,17 @@ class OpenRouter:
             raise OpenRouterError(str(err))
         return body
 
+    async def _post_local(self, payload: dict, deadline: float) -> dict:
+        """A local chat call, once after a 503 (the server is starting, not failing)."""
+        try:
+            return await self._post("/chat/completions", payload, deadline)
+        except OpenRouterError as e:
+            if e.status != 503:
+                raise
+            logger.warning("local server answered 503 (starting?), retrying in %.0f s", LOCAL_RETRY_PAUSE)
+            await asyncio.sleep(LOCAL_RETRY_PAUSE)
+            return await self._post("/chat/completions", payload, deadline)
+
     # ── chat ────────────────────────────────────────────────────────────────
 
     async def model_loaded(self, model: str) -> bool:
@@ -221,7 +237,11 @@ class OpenRouter:
             payload["tools"] = tools
         deadline = LOCAL_CHAT_DEADLINE if self.local else CHAT_DEADLINE
         try:
-            body = await self._post("/chat/completions", payload, deadline)
+            if self.local:
+                async with self._local_turn:
+                    body = await self._post_local(payload, deadline)
+            else:
+                body = await self._post("/chat/completions", payload, deadline)
         except OpenRouterError as e:
             # the cheapest provider hangs: let OpenRouter route to any other one.
             # A local server has only itself to fall back to.

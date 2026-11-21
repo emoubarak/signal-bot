@@ -231,7 +231,7 @@ async def test_image_in_progress_does_not_hold_up_other_answers(harness: Harness
     harness.llm.script = [{"name": "generate_image", "arguments": {"prompt": "a cat"}}, "hi paul", "here"]
     await harness.run(group_message(PAUL, "jarvis make a cat"), drain=False)
     await asyncio.sleep(0)  # the image request is now waiting on the image
-    await harness.run(group_message(PAUL, "jarvis hi"), drain=False)
+    await harness.run(group_message(LEA, "jarvis hi"), drain=False)  # someone else: one request at a time per person
     for _ in range(20):
         await asyncio.sleep(0)
     assert harness.sent_texts() == ["hi paul"]
