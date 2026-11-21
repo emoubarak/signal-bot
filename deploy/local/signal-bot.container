@@ -1,7 +1,7 @@
 # Le bot Signal. Quadlet : systemd --user génère signal-bot.service.
 # L'image `localhost/signal-bot:latest` est construite par deploy/local/update.sh (premier lancement compris).
 [Unit]
-Description=Bot Signal (LLM)
+Description=Signal bot (LLM)
 After=signal-rest.service network-online.target
 Wants=signal-rest.service network-online.target
 

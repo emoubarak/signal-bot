@@ -1,5 +1,5 @@
 [Unit]
-Description=Met à jour le bot Signal depuis origin/main
+Description=Updates the Signal bot from origin/main
 
 [Service]
 Type=oneshot

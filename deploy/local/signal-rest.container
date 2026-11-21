@@ -1,7 +1,7 @@
 # signal-cli-rest-api : le compte Signal du bot. Quadlet : systemd --user génère signal-rest.service.
 # Installé dans ~/.config/containers/systemd/ (voir deploy/local/README.md).
 [Unit]
-Description=signal-cli-rest-api (compte Signal du bot)
+Description=signal-cli-rest-api (the bot's Signal account)
 After=network-online.target
 Wants=network-online.target
 

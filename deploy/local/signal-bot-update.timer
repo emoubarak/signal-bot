@@ -1,5 +1,5 @@
 [Unit]
-Description=Cherche une nouvelle version du bot Signal toutes les 5 minutes
+Description=Checks for a new Signal bot version every 5 minutes
 
 [Timer]
 OnBootSec=2min
