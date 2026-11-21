@@ -476,3 +476,23 @@ async def test_reminders_the_old_version_gave_up_on_stay_given_up(tmp_path):
     store = Store(path)
     assert [r["message"] for r in store.due_reminders(10)] == ["alive"]
     assert [r["message"] for r in store.pending_reminders("g")] == ["alive"]
+
+
+async def test_a_sender_with_no_name_is_never_shown_as_a_number(harness: Harness):
+    nameless = ("+33644556677", "44444444-4444-4444-4444-444444444444", None)
+    await harness.run(group_message(nameless, "jarvis hi"))
+    assert "+33644556677" not in prompt_text(harness)
+    assert harness.store.recent(CHAT_ID, 2)[0].author_name == "Unknown"
+
+
+async def test_editing_a_voice_note_stored_before_transcripts_were_kept_apart_keeps_what_was_heard(harness: Harness):
+    ts = _new_timestamp()
+    await harness.run(group_message(PAUL, "note", attachments=[voice_attachment()], ts=ts))
+    m = harness.store.get(CHAT_ID, ts)
+    for a in m.attachments:                      # a row as the old version stored it: no transcript key
+        a.pop("transcript", None)
+    harness.store.update_message(CHAT_ID, ts, m.author_id, m.text, m.attachments)
+    await harness.run(edit_message(PAUL, "my note", ts))
+    assert harness.store.get(CHAT_ID, ts).text == "hi this is a voice note - my note"
+    await harness.run(edit_message(PAUL, "my other note", ts))      # now exact
+    assert harness.store.get(CHAT_ID, ts).text == "hi this is a voice note - my other note"

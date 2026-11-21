@@ -45,6 +45,14 @@ LIMIT_WINDOW_MS = 3_600_000
 _IMAGE_TAG = re.compile(r"\[image: .*?\]")
 
 
+def _keep_old_transcript(old: StoredMessage) -> None:
+    """A voice note stored before transcripts were kept apart: take it from its text, "transcript - caption" or
+    just "transcript" (the last " - " separates the caption, which is what an edit replaces)."""
+    voice = next((a for a in old.attachments if is_audio(a.get("content_type")) and "transcript" not in a), None)
+    if voice is not None and not any("transcript" in a for a in old.attachments):
+        voice["transcript"] = old.text.rsplit(" - ", 1)[0] if " - " in old.text else old.text
+
+
 def _compose(kind: str, caption: str, attachments: list[dict], legacy: str = "") -> str:
     """The text stored for a message: its caption plus what was read from its media (the description of
     each image, the transcription of a voice note), kept with the attachments so a new caption (an edit)
@@ -249,7 +257,8 @@ class LLMHandler(DataMessageHandler, RemoteDeleteHandler):
         author_id = msg.source_uuid or msg.source_number or "?"
         if self._is_self(c):
             return author_id, self.settings.bot_name
-        name = msg.source_name or msg.source_number or self.store.author_name(self._chat_id(c), author_id) or "Unknown"
+        # never the number: the name reaches the model in every transcript line
+        name = msg.source_name or self.store.author_name(self._chat_id(c), author_id) or "Unknown"
         return author_id, name
 
     async def _record(self, c: DataMessageContext) -> StoredMessage | None:
@@ -343,6 +352,8 @@ class LLMHandler(DataMessageHandler, RemoteDeleteHandler):
             if old is None or old.author_id != author_id or old.is_bot:
                 return
             caption = self._text_of(chat_id, msg).strip()
+            if old.kind == KIND_VOICE:
+                _keep_old_transcript(old)
             text = _compose(old.kind, caption, old.attachments, legacy=old.text) if old.kind != KIND_TEXT else caption
             if text == old.text or not self.store.update_message(chat_id, old.ts, author_id, text, old.attachments):
                 return
