@@ -20,7 +20,7 @@ Environment=TZ=Europe/Paris
 # tailnet : tailscale serve --bg --https=8450 http://127.0.0.1:8450
 Environment=ADMIN_HOST=127.0.0.1
 Environment=ADMIN_PORT=8450
-# La base SQLite et les pièces jointes. Volume nommé : SELinux n'étiquette pas un dossier de ~/repos.
+# The SQLite database and the attachments. Named volume: SELinux does not label a folder inside a source checkout.
 Volume=signal-bot-data:/app/data
 # Le bot finit ses réponses en cours à l'arrêt (60 s au plus).
 StopTimeout=75

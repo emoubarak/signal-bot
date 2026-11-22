@@ -129,7 +129,7 @@ On a PC with Podman instead of Docker (systemd user units, like the rest of the 
 To deploy every push to `main`, add `deploy/autodeploy.sh` to the server's crontab:
 
 ```
-*/5 * * * * $HOME/repos/signal-bot/deploy/autodeploy.sh >> $HOME/repos/signal-bot/deploy/autodeploy.log 2>&1
+*/5 * * * * /path/to/signal-bot/deploy/autodeploy.sh >> /path/to/signal-bot/deploy/autodeploy.log 2>&1
 ```
 
 It fast-forwards to `origin/main` and rebuilds the bot; if the new version does not stay up for 30 seconds it goes back to the previous commit and skips the broken one until `main` moves again.
