@@ -1,0 +1,2 @@
+# Exceptions du pre-push des dépôts publics (~/.claude/learn/git-hooks/pre-push) : une expression par ligne.
+EnvironmentFile=%h/repos/emoubarak/signal-bot/signal-bot-secrets/bot\.env  # chemin réel du déploiement, à rendre générique avec sa migration (public-ok)
