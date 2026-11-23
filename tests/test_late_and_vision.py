@@ -75,6 +75,9 @@ async def test_model_loaded_reads_llama_swap_running(mocker):
     from llmbot.openrouter import OpenRouter
 
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/models":   # llama-swap's selectors and their targets
+            return httpx.Response(200, json={"data": [{"id": "local-model", "meta": {"llamaswap": {
+                "type": "selector", "targets": ["inkling-2-mini-ablit", "qwen3.8-flash-next"]}}}]})
         assert request.url.path == "/running"
         return httpx.Response(200, json={"running": [
             {"model": "qwen3.8-flash-next", "state": "ready"}, {"model": "embeddinggemma-2", "state": "ready"}]})
@@ -83,6 +86,8 @@ async def test_model_loaded_reads_llama_swap_running(mocker):
     llm = OpenRouter("", base_url="http://127.0.0.1:8089/v1", local=True, client=client)
     assert await llm.model_loaded("qwen3.8-flash-next-ablit")  # selector, target loaded
     assert await llm.model_loaded("qwen3.8-flash-next")
+    assert await llm.model_loaded("local-model")   # a selector whose name shares nothing with its target
+    assert await llm.running_for("local-model") == ["qwen3.8-flash-next"]
     assert not await llm.model_loaded("qwen3.6-35b-ablit")
 
     down = httpx.AsyncClient(base_url="http://127.0.0.1:8089/v1",

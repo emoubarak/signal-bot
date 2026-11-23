@@ -24,6 +24,9 @@ class ProbeLLM:
             raise OpenRouterError("connection refused")
         return ChatResult(text="", finish_reason="stop", model=self.served)
 
+    async def running_for(self, model):
+        return []
+
 
 class FakeBot:
     def __init__(self, fail_for: set[str] | None = None) -> None:
@@ -161,3 +164,18 @@ async def test_a_gguf_path_is_announced_by_its_model_name():
 
     announcer = StartupAnnouncer(SimpleNamespace(chat_model="qwen3.5-4b-llm", local_chat=False), LLM())
     assert await announcer._served_model() == "Qwen3.5-4B-Q4_K_M"
+
+
+def test_local_announces_the_model_a_selector_runs():
+    """A local selector (`local-model`) is announced with the model llama-swap really runs for it (23/11/2026)."""
+    import asyncio
+
+    class Local(ProbeLLM):
+        async def running_for(self, model):
+            return ["inkling-2-mini-ablit"]
+    from llmbot.startup import StartupAnnouncer
+    a = StartupAnnouncer.__new__(StartupAnnouncer)
+    a.settings = type("S", (), {"local_chat": True, "chat_model": "local-model"})()
+    a.llm = Local()
+    assert asyncio.run(a._served_model()) == "local-model (inkling-2-mini-ablit)"
+    assert a.llm.calls == []   # no probe: it would load a model

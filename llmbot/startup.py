@@ -30,8 +30,9 @@ class StartupAnnouncer(ReadyHandler):
 
     async def _served_model(self) -> str:
         """The model that really answers, or the configured name if it will not say."""
-        if self.settings.local_chat:
-            return self.settings.chat_model
+        if self.settings.local_chat:   # no probe (it would load a model): the one llama-swap runs for this name
+            loaded = await self.llm.running_for(self.settings.chat_model)
+            return f"{self.settings.chat_model} ({loaded[0]})" if loaded else self.settings.chat_model
         try:
             reply = await self.llm.chat(
                 model=self.settings.chat_model,

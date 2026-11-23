@@ -191,8 +191,8 @@ class OpenRouter:
         (an image description) never makes llama-swap swap out another model. True for
         OpenRouter, and for a local server that does not say what it runs (no llama-swap
         `/running`): then nothing would be swapped anyway. A llama-swap selector
-        (`qwen3.8-flash-next-ablit`) counts as loaded when one of its targets is: one name
-        starts the other (`qwen3.8-flash-next`, `qwen3.6-35b-ablit-rtx`)."""
+        (`local-model`, `qwen3.8-flash-next-ablit`) counts as loaded when one of its targets is (read
+        from llama-swap's /v1/models), or when one name starts the other (`qwen3.6-35b-ablit-rtx`)."""
         if not self.local:
             return True
         root = str(self._client.base_url).rstrip("/").removesuffix("/v1")
@@ -203,7 +203,34 @@ class OpenRouter:
             running = [m.get("model", "") for m in r.json().get("running", []) if m.get("state") == "ready"]
         except (httpx.HTTPError, ValueError, AttributeError):
             return True
-        return any(name and (model.startswith(name) or name.startswith(model)) for name in running)
+        targets = await self._selector_targets(root, model)
+        return any(name and (name in targets or model.startswith(name) or name.startswith(model)) for name in running)
+
+    async def running_for(self, model: str) -> list[str]:
+        """The loaded models that answer for `model` on a local llama-swap: itself, or the targets of the selector
+        it names (`local-model`: Strata or Inkling, 23/11/2026). Empty when nothing of it is loaded or unknown."""
+        if not self.local:
+            return []
+        root = str(self._client.base_url).rstrip("/").removesuffix("/v1")
+        try:
+            r = await self._client.get(root + "/running", timeout=5)
+            running = [m.get("model", "") for m in r.json().get("running", []) if m.get("state") == "ready"]
+        except (httpx.HTTPError, ValueError, AttributeError):
+            return []
+        targets = await self._selector_targets(root, model)
+        return [n for n in running if n and (n == model or n in targets)]
+
+    async def _selector_targets(self, root: str, model: str) -> list[str]:
+        """llama-swap's targets for a selector name (its /v1/models meta), [] for a plain model or another server."""
+        try:
+            r = await self._client.get(root + "/v1/models", timeout=5)
+            for m in r.json().get("data") or []:
+                meta = (m.get("meta") or {}).get("llamaswap") or {}
+                if m.get("id") == model and meta.get("type") == "selector":
+                    return list(meta.get("targets") or [])
+        except (httpx.HTTPError, ValueError, AttributeError):
+            pass
+        return []
 
     async def chat(
         self,
