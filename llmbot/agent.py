@@ -239,9 +239,10 @@ LIST_REMINDERS_TOOL = {"type": "function", "function": {
 }}
 REMEMBER_WHO_TOOL = {"type": "function", "function": {
     "name": "remember_who",
-    "description": "Saves who somebody is, only when the message you answer tells it (\"OT c'est Othman\", "
-                   "\"Simo = Samgel\", the answer to your \"c'est qui X ?\"): the person and their other names. "
-                   "Never from a guess or a joke, never for someone already listed under Who is who.",
+    "description": "Saves another name of a member of this chat, only when the message you answer tells it "
+                   "(\"OT c'est Othman\", \"Simo = Samgel\", the answer to your \"c'est qui X ?\"): the member's "
+                   "name and their other names. Never for someone outside the chat, never from a guess or a joke, "
+                   "never for a name already listed under Who is who.",
     "parameters": {"type": "object", "properties": {
         "names": {"type": "array", "items": {"type": "string"},
                   "description": "The names of the same person: display name, first name, nicknames."},
@@ -494,9 +495,15 @@ class Agent:
             kept.pop()
         return kept[::-1]
 
-    def _remember_who(self, raw, about=None) -> str:
+    def _member_names(self, chat_id: str) -> dict[str, list[str]]:
+        """The chat's people (not the bot) and every display name each one had."""
+        return {a: n for a, n in (self.store.names_by_author(chat_id) if self.store else {}).items()
+                if a != self.settings.phone_number and n[0] != self.settings.bot_name}
+
+    def _remember_who(self, raw, about=None, chat_id: str | None = None) -> str:
         """Add "a = b = c (about)" to the who-is-who note, saved like a change from the admin page. A name already
-        in a line merges into it."""
+        in a line merges into it. Only for the chat's members: other names in a chat are clichés and jokes
+        ("Gérard 54 ans"), not people to remember (Mehdi, 2026-11-24)."""
         names = [" ".join(str(n).replace("=", " ").split()) for n in
                  (raw if isinstance(raw, list) else str(raw or "").split("="))]
         names = list(dict.fromkeys(n for n in names if n))
@@ -504,6 +511,12 @@ class Agent:
         if not names or (len(names) < 2 and not about):
             return "Give at least two names of the same person, or what they are."
         lines = [l.strip() for l in (self.settings.people or "").splitlines() if l.strip()]
+        if chat_id is not None:
+            members = {n.lower() for names_ in self._member_names(chat_id).values() for n in names_}
+            noted = {re.sub(r"\s*\(.*\)\s*$", "", p).strip().lower() for l in lines for p in l.split("=")}
+            if not {n.lower() for n in names} & (members | noted):
+                return ("Not saved: only the members of this chat are remembered, and none of these names is one. "
+                        "Do not mention it in your reply.")
         for i, line in enumerate(lines):
             known = [re.sub(r"\s*\(.*\)\s*$", "", p).strip() for p in line.split("=") if p.strip()]
             notes = re.findall(r"\(([^)]*)\)", line)
@@ -533,19 +546,17 @@ class Agent:
         """The members of the chat with the display names each one had, and the owner's note of nicknames: people
         call each other by first names and nicknames ("OT", "Tronji", "Othman" are one person) (2026-11-24)."""
         members = []
-        for author_id, names in (self.store.names_by_author(req.chat_id) if self.store else {}).items():
-            if author_id == self.settings.phone_number or names[0] == self.settings.bot_name:
-                continue
+        for names in (self._member_names(req.chat_id) if self.store else {}).values():
             members.append(names[0] + (f" (earlier display names: {', '.join(names[1:])})" if names[1:] else ""))
         note = (self.settings.people or "").strip()
         if not members and not note:
             return ""
         out = "\n\nWho is who. People call each other by display names, first names and nicknames: each name below " \
-              "on one line is the same person. A name that is not listed may still be one of them: work it out " \
-              "from the conversation, and never take two people for one because their names look alike. When " \
-              "the request is about someone you cannot place and the answer depends on who they are, your whole " \
-              "reply is one short question in the language of the request (\"c'est qui Kader ?\"); when somebody tells " \
-              "you, call remember_who."
+              "on one line is the same person, a member of this chat. Never take two members for one because their " \
+              "names look alike. Any other name is not someone of the group: a famous person by that name, or the " \
+              "cliché, example or joke character the name evokes. Answer about that, as if it were obvious: never " \
+              "ask who it is, never say you do not know them, never point out they are not a member. When a " \
+              "message tells another name of a member (\"Tronji c'est OT\"), call remember_who."
         if members:
             out += "\nMembers here: " + "; ".join(members) + "."
         if note:
@@ -771,7 +782,7 @@ class Agent:
                              for r in waiting)
 
         if name == "remember_who":
-            return self._remember_who(args.get("names"), args.get("about"))
+            return self._remember_who(args.get("names"), args.get("about"), chat_id=req.chat_id)
 
         if name == "get_spend":
             now = datetime.now(self.tz)

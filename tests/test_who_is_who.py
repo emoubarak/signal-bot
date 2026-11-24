@@ -42,14 +42,14 @@ async def test_the_prompt_lists_members_with_their_old_display_names_and_the_not
 
 async def test_remember_who_merges_into_the_note_and_is_saved(harness: Harness):
     from llmbot import runtime_config as rc
-    harness.llm.script = [{"name": "remember_who", "arguments": {"names": ["OT", "Othman"]}}, "noté",
-                          {"name": "remember_who", "arguments": {"names": ["Tronji", "OT"]}}, "noté",
-                          {"name": "remember_who", "arguments": {"names": ["othman", "OT"]}}, "déjà su"]
-    await harness.run(group_message(LEA, "jarvis OT c'est Othman"))
-    await harness.run(group_message(LEA, "jarvis Tronji c'est OT aussi"))
-    await harness.run(group_message(LEA, "jarvis othman c'est OT"))
-    assert rc.load(harness.store)["people"] == "OT = Othman = Tronji"
-    assert harness.handler.agent.settings.people == "OT = Othman = Tronji"
+    harness.llm.script = [{"name": "remember_who", "arguments": {"names": ["Lea", "Léa"]}}, "noté",
+                          {"name": "remember_who", "arguments": {"names": ["Lili", "Lea"]}}, "noté",
+                          {"name": "remember_who", "arguments": {"names": ["léa", "Lea"]}}, "déjà su"]
+    await harness.run(group_message(LEA, "jarvis Lea c'est Léa"))
+    await harness.run(group_message(LEA, "jarvis Lili c'est Lea aussi"))
+    await harness.run(group_message(LEA, "jarvis léa c'est Lea"))
+    assert rc.load(harness.store)["people"] == "Lea = Léa = Lili"
+    assert harness.handler.agent.settings.people == "Lea = Léa = Lili"
     tool_out = [m for m in harness.llm.chat_calls[-1]["messages"] if m["role"] == "tool"][-1]["content"]
     assert tool_out.startswith("Already known")
 
@@ -62,9 +62,25 @@ def test_remember_who_keeps_what_someone_is():
     store = Store(":memory:")
     a = Agent(Settings(signal_service="x", phone_number="+33600000000", local_base_url="http://x"),
               store, None, None, ZoneInfo("UTC"))
-    assert a._remember_who(["Kader"], "Badr's cousin, not in the group").startswith("Saved")
+    assert a._remember_who(["Kader"], "Badr's cousin, not in the group").startswith("Saved")  # no chat: no check
     a._remember_who(["kader", "Kad"])
     assert a._remember_who(["Kad"], "member of the group").startswith("Already known")
     assert a._remember_who(["Kad", "Kader"], "member of the group").startswith("Already known")
     assert a.settings.people == "Kader = Kad (Badr's cousin, not in the group)"
     assert a._remember_who(["Kader"]).startswith("Give at least two")
+
+
+def test_remember_who_refuses_names_outside_the_chat():
+    from zoneinfo import ZoneInfo
+    from llmbot.agent import Agent
+    from llmbot.config import Settings
+    from llmbot.store import KIND_TEXT, Store, StoredMessage
+    store = Store(":memory:")
+    store.add(StoredMessage(chat_id="g", ts=1, author_id="u1", author_name="OT", kind=KIND_TEXT, text="yo"))
+    a = Agent(Settings(signal_service="x", phone_number="+33600000000", local_base_url="http://x"),
+              store, None, None, ZoneInfo("UTC"))
+    assert a._remember_who(["Zakaria"], "Badr's cousin", chat_id="g").startswith("Not saved")
+    assert a._remember_who(["Gérard", "Gégé"], chat_id="g").startswith("Not saved")
+    assert a._remember_who(["Tronji", "OT"], chat_id="g").startswith("Saved")
+    assert a._remember_who(["Othman", "Tronji"], chat_id="g").startswith("Saved")  # Tronji is in the note now
+    assert a.settings.people == "Tronji = OT = Othman"
