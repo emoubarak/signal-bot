@@ -441,8 +441,12 @@ class Agent:
         return self._line(m, images)
 
     def _reply_name(self, m: StoredMessage) -> str | None:
+        """Whose message `m` replies to. The bot's own is "Mop (you)", as its lines are: shown as "replying to
+        Mop", the bot read itself as somebody else and answered "ta mère" with "sa mère" (2026-11-24)."""
         t = self.store.get(m.chat_id, m.reply_to_ts) if m.reply_to_ts else None
-        return t.author_name if t else None
+        if t is None:
+            return None
+        return f"{self.settings.bot_name} (you)" if self._own(t) else t.author_name
 
     def _own(self, m: StoredMessage) -> bool:
         """A message the bot sent: text (KIND_BOT) or a meme, GIF or image (KIND_IMAGE, told by the author)."""
@@ -471,6 +475,17 @@ class Agent:
         while kept and self._own(kept[-1]):   # the window opens with a person
             kept.pop()
         return kept[::-1]
+
+    def _speaker_note(self, author: str) -> str:
+        """Who "tu" and "je" are in the message being answered. Without it the local model took "ta mère" said to
+        it for somebody else's mother ("sa mère c'est la vraie stoïcienne") and talked to the author about them
+        ("le GPU de Mehdiurge", to Mehdiurge) (2026-11-24)."""
+        me = self.settings.bot_name
+        return (f"(Written by {author}. Where {author} speaks to you, the second person (tu, toi, ta, ton, tes; you, "
+                f"your; darija nta, nti, dyalek, the -k ending as in mok, bok, jdek) means you, {me}, and the first "
+                f"person (je, moi, ma, mon; I, my; darija ana, dyali, the -i ending) means {author}. Your reply speaks "
+                f"of yourself in the first person (\"ma mère\", never \"sa mère\" for yours) and to {author} as \"tu\" or \"you\", "
+                "the others by their name. A quote or a translation keeps the words of the original.)")
 
     def _own_line(self, m: StoredMessage) -> str:
         """One of the bot's earlier replies, enough to see what it answered, too short to copy."""
@@ -509,6 +524,8 @@ class Agent:
             is_last = i == len(thread) - 1
             if is_last and quoted is not None and not quoted_in_thread:
                 text = "[TARGET]\n" + self._line(quoted, images, with_time=False) + "\n\n" + text
+            if is_last:
+                text += "\n\n" + self._speaker_note(m.author_name)
             if is_last and budget:
                 text += f"\n\n(Your reply: at most {budget} words.)"
             content: list[dict] = [{"type": "text", "text": text}]
