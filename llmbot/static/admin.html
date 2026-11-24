@@ -392,6 +392,7 @@ const DEF = {
   announce_startup: ["Tell the owner at startup", "A private message at every restart, with the model in use."],
   attachment_retention_days: ["Keep attachments (days)", "Images and voice notes older than this are deleted at startup."],
   personality: ["Personality", "The bot's character, given to the model with every request. Tone, how far it goes, what it never does. Written in English works best, the bot still answers in the group's language."],
+  people: ["Who is who", "The other names of the people in the group, one person per line, e.g. \"OT = Tronji = Othman\". The bot adds a line itself when someone says who somebody is. Signal display names a person had before are known without writing them here."],
   msg_loading: ["Model loading", "Posted once when a local model has not started answering after 20 seconds."],
   msg_rate_limit: ["Rate limit reached", "Posted once when someone is over the hourly limit. {limit} = the limit."],
   msg_cleared: ["Memory wiped", "The reply to /clear. {hidden} = how many messages were hidden."],
@@ -404,7 +405,7 @@ const DEF = {
 const TRY = {
   web_search: ["A search", "Premier League table"], read_page: ["A link", "https://example.com"],
   get_weather: ["A city", "Lyon, France"], get_time: ["A timezone", "Asia/Tokyo"], calculate: ["A calculation", "214.60 / 7"],
-  send_gif: ["Keywords in English", "applause"], get_spend: null, generate_image: false, get_history: false, search_messages: false, remind: false,
+  send_gif: ["Keywords in English", "applause"], get_spend: null, generate_image: false, get_history: false, search_messages: false, remind: false, remember_who: false,
   make_meme: ["Two captions separated by a comma", "Monday morning, Friday evening"],
   pick_random: ["Choices separated by commas", "pizza, sushi, burger"],
 };
@@ -672,6 +673,7 @@ function pageBehavior() {
     h("div", { class: "card stack" }, h("div", null, h("h3", null, "Memory and replies")),
       h("div", { class: "grid2" }, textField("context_messages"), textField("max_output_tokens")), boolField("describe_images")),
     h("div", { class: "card stack" }, h("div", null, h("h3", null, "Character")), textField("personality")),
+    h("div", { class: "card stack" }, h("div", null, h("h3", null, "People")), textField("people")),
     h("div", { class: "card stack" }, h("div", null, h("h3", null, "Fixed messages"), h("p", { class: "lead" }, "What the bot posts by itself, not written by the model. Words in {braces} are filled in.")),
       ...Object.keys(S.fields).filter(k => k.startsWith("msg_")).map(k => textField(k))),
     h("div", { class: "card stack" }, h("div", null, h("h3", null, "Startup")),

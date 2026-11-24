@@ -21,7 +21,7 @@ def settings(**overrides) -> Settings:
 
 def test_web_tools_are_offered_by_default():
     names = [t["function"]["name"] for t in tools_for(settings())]
-    assert names == ["get_history", "search_messages", "remind", "list_reminders", "generate_image", "get_spend",
+    assert names == ["get_history", "search_messages", "remind", "list_reminders", "remember_who", "generate_image", "get_spend",
                      "web_search", "read_page", "get_weather", "get_time", "calculate", "pick_random", "make_meme"]
 
 

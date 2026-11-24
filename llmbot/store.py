@@ -232,6 +232,15 @@ class Store:
         ).fetchone()
         return row["author_name"] if row else None
 
+    def names_by_author(self, chat_id: str) -> dict[str, list[str]]:
+        """Every display name each author of the chat had, the current one first."""
+        out: dict[str, list[str]] = {}
+        for row in self._db.execute(
+                "SELECT author_id, author_name, MAX(ts) AS last FROM messages WHERE chat_id=? AND kind != 'bot' "
+                "GROUP BY author_id, author_name ORDER BY last DESC", (chat_id,)):
+            out.setdefault(row["author_id"], []).append(row["author_name"])
+        return out
+
     def prune(self, keep_per_chat: int = 2000) -> None:
         chats = [r["chat_id"] for r in self._db.execute("SELECT DISTINCT chat_id FROM messages")]
         for chat in chats:

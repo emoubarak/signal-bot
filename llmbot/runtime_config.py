@@ -20,7 +20,7 @@ UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]
 
 # Every tool the page can switch off, as the model sees its name.
 TOOL_SWITCHES = ["generate_image", "send_gif", "make_meme", "get_spend", "web_search", "read_page", "get_weather", "get_time",
-                 "calculate", "pick_random", "search_messages", "remind"]
+                 "calculate", "pick_random", "search_messages", "remind", "remember_who"]
 
 
 @dataclass(frozen=True)
@@ -62,6 +62,7 @@ FIELDS: dict[str, Field] = {f.key: f for f in [
     Field("describe_images", "bool"),
     Field("attachment_retention_days", "int", live=False, minimum=1, maximum=3650),
     Field("personality", "longtext", allow_empty=False),
+    Field("people", "longtext"),
     # fixed messages
     *[Field(k, "message", allow_empty=False) for k in MESSAGE_DEFAULTS],
 ]}

@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from llmbot import prompts, reminders, webtools
+from llmbot import prompts, reminders, runtime_config, webtools
 from llmbot.personas import Registry
 from llmbot.config import MESSAGE_DEFAULTS, Settings, message
 from llmbot.context import fmt_time, format_message
@@ -237,6 +237,18 @@ LIST_REMINDERS_TOOL = {"type": "function", "function": {
         "cancel_id": {"type": "integer", "description": "Number of the reminder to cancel."},
     }},
 }}
+REMEMBER_WHO_TOOL = {"type": "function", "function": {
+    "name": "remember_who",
+    "description": "Saves who somebody is, only when the message you answer tells it (\"OT c'est Othman\", "
+                   "\"Simo = Samgel\", the answer to your \"c'est qui X ?\"): the person and their other names. "
+                   "Never from a guess or a joke, never for someone already listed under Who is who.",
+    "parameters": {"type": "object", "properties": {
+        "names": {"type": "array", "items": {"type": "string"},
+                  "description": "The names of the same person: display name, first name, nicknames."},
+        "about": {"type": "string", "description": "Optional, a few words on who they are if that was said "
+                                                   "(\"Badr's brother\", \"not in the group\")."},
+    }, "required": ["names"]},
+}}
 GENERATE_IMAGE_TOOL = {"type": "function", "function": {
     "name": "generate_image",
     "description": "Generates an image, or edits/combines conversation images passed as references.",
@@ -273,6 +285,8 @@ def tools_for(settings: Settings) -> list[dict]:
         tools.append(SEARCH_MESSAGES_TOOL)
     if settings.tool_enabled("remind"):
         tools.extend([REMIND_TOOL, LIST_REMINDERS_TOOL])
+    if settings.tool_enabled("remember_who"):
+        tools.append(REMEMBER_WHO_TOOL)
     if settings.images_enabled:
         tools.append(GENERATE_IMAGE_TOOL)
     if settings.tool_enabled("get_spend"):
@@ -363,6 +377,9 @@ class Agent:
         if s.tool_enabled("search_messages"):
             can.append("- search_messages to find what someone said earlier by keywords (get_history only reads the "
                        "latest messages);")
+        if s.tool_enabled("remember_who"):
+            can.append("- remember_who when a message says who somebody is (\"X c'est Y\", a first name, a nickname), "
+                       "so you know it next time;")
         if s.tool_enabled("remind"):
             can.append("- remind to post a message in this chat later (\"remind us at 8pm\", \"in 20 minutes\"), "
                        "list_reminders to see or cancel them; work the time out from the date and time you are given;")
@@ -399,6 +416,7 @@ class Agent:
             + ("When you generate an image, your final text is a short caption, or nothing.\n" if s.images_enabled else "")
             + prompts.COMMON_RULES.strip()
             + personas
+            + self._who_is_who(req)
             + f"\n\nNow: {now.strftime('%A %d/%m/%Y %H:%M')} ({s.timezone})."
             + (f" Remaining image allowance for this person: {req.images_remaining}." if s.images_enabled else "")
         )
@@ -475,6 +493,64 @@ class Agent:
         while kept and self._own(kept[-1]):   # the window opens with a person
             kept.pop()
         return kept[::-1]
+
+    def _remember_who(self, raw, about=None) -> str:
+        """Add "a = b = c (about)" to the who-is-who note, saved like a change from the admin page. A name already
+        in a line merges into it."""
+        names = [" ".join(str(n).replace("=", " ").split()) for n in
+                 (raw if isinstance(raw, list) else str(raw or "").split("="))]
+        names = list(dict.fromkeys(n for n in names if n))
+        about = " ".join(str(about or "").replace("=", " ").replace("(", " ").replace(")", " ").split())[:120]
+        if not names or (len(names) < 2 and not about):
+            return "Give at least two names of the same person, or what they are."
+        lines = [l.strip() for l in (self.settings.people or "").splitlines() if l.strip()]
+        for i, line in enumerate(lines):
+            known = [re.sub(r"\s*\(.*\)\s*$", "", p).strip() for p in line.split("=") if p.strip()]
+            notes = re.findall(r"\(([^)]*)\)", line)
+            if not {n.lower() for n in names} & {k.lower() for k in known}:
+                continue
+            added = [n for n in names if n.lower() not in {k.lower() for k in known}]
+            if not added:  # what a known person "is" was the model's own gloss ("member of the group"), not news
+                return f"Already known, nothing saved (do not mention it in your reply): {line}"
+            lines[i] = " = ".join(known + added) + "".join(f" ({x})" for x in notes)
+            break
+        else:
+            lines.append(" = ".join(names) + (f" ({about})" if about else ""))
+        people = "\n".join(lines)
+        if len(people) > 6000:
+            return "The who-is-who note is full: the owner can tidy it on the admin page."
+        overrides = runtime_config.load(self.store)
+        overrides["people"] = people
+        runtime_config.save(self.store, overrides)
+        if hasattr(self.settings, "update"):
+            self.settings.update(people=people)
+        else:
+            self.settings = replace(self.settings, people=people)
+        logger.info("who is who: %s", " = ".join(names))
+        return "Saved. Who is who now: " + next(l for l in lines if names[0].lower() in l.lower())
+
+    def _who_is_who(self, req: AgentRequest) -> str:
+        """The members of the chat with the display names each one had, and the owner's note of nicknames: people
+        call each other by first names and nicknames ("OT", "Tronji", "Othman" are one person) (2026-11-24)."""
+        members = []
+        for author_id, names in (self.store.names_by_author(req.chat_id) if self.store else {}).items():
+            if author_id == self.settings.phone_number or names[0] == self.settings.bot_name:
+                continue
+            members.append(names[0] + (f" (earlier display names: {', '.join(names[1:])})" if names[1:] else ""))
+        note = (self.settings.people or "").strip()
+        if not members and not note:
+            return ""
+        out = "\n\nWho is who. People call each other by display names, first names and nicknames: each name below " \
+              "on one line is the same person. A name that is not listed may still be one of them: work it out " \
+              "from the conversation, and never take two people for one because their names look alike. When " \
+              "the request is about someone you cannot place and the answer depends on who they are, your whole " \
+              "reply is one short question in the language of the request (\"c'est qui Kader ?\"); when somebody tells " \
+              "you, call remember_who."
+        if members:
+            out += "\nMembers here: " + "; ".join(members) + "."
+        if note:
+            out += "\nOther names:\n" + note
+        return out
 
     def _speaker_note(self, author: str) -> str:
         """Who "tu" and "je" are in the message being answered. Without it the local model took "ta mère" said to
@@ -693,6 +769,9 @@ class Agent:
                 return "No reminder is waiting in this chat."
             return "\n".join(f"#{r['id']} {reminders.when_text(r['due_ts'], self.tz)} (asked by {r['author_name']}): {r['message']}"
                              for r in waiting)
+
+        if name == "remember_who":
+            return self._remember_who(args.get("names"), args.get("about"))
 
         if name == "get_spend":
             now = datetime.now(self.tz)

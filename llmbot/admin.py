@@ -65,6 +65,7 @@ TOOL_INFO = {
     "pick_random": ("Pick at random", "Coin flip, dice, a random choice between several options: the model cannot do randomness on its own.", "Utilities"),
     "search_messages": ("Find a message", "Searches by keywords for what someone said earlier in the conversation.", "Conversation"),
     "remind": ("Reminders", "Schedules a message in the group at a given time (\u201cremind us at 8 pm\u201d). Reminders survive a restart.", "Conversation"),
+    "remember_who": ("Remember who is who", "When someone says who somebody is (\u201cOT is Othman\u201d), adds it to the People list of the Behavior page.", "Conversation"),
     "get_spend": ("Bot cost", "Says how much the bot has cost today and over 30 days.", "Utilities"),
 }
 ALWAYS_ON = ("get_history", "Reread the history", "Finds what was said earlier in the group.", "Utilities")

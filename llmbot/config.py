@@ -117,6 +117,10 @@ class Settings:
     # The bot's character, in its system prompt. Editable from the admin page.
     personality: str = PERSONALITY.strip()
 
+    # Who is who: nicknames, first names, old display names of the people in the chats, one person per line.
+    # Editable from the admin page; the remember_who tool adds the ones somebody states in a chat.
+    people: str = ""
+
     # The fixed messages the bot posts itself, editable from the admin page ({names} are filled in).
     msg_loading: str = MESSAGE_DEFAULTS["msg_loading"]
     msg_rate_limit: str = MESSAGE_DEFAULTS["msg_rate_limit"]
