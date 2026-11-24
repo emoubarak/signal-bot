@@ -572,7 +572,9 @@ class Agent:
                 f"your; darija nta, nti, dyalek, the -k ending as in mok, bok, jdek) means you, {me}, and the first "
                 f"person (je, moi, ma, mon; I, my; darija ana, dyali, the -i ending) means {author}. Your reply speaks "
                 f"of yourself in the first person (\"ma mère\", never \"sa mère\" for yours) and to {author} as \"tu\" or \"you\", "
-                "the others by their name. A quote or a translation keeps the words of the original.)")
+                "the others by their name. A quote or a translation keeps the words of the original. Asked to talk "
+                "like someone or in their style, you write a message as that person would write it, with their words "
+                "and habits from the conversation: no comment on the request, nothing about yourself.)")
 
     def _own_line(self, m: StoredMessage) -> str:
         """One of the bot's earlier replies, enough to see what it answered, too short to copy."""
