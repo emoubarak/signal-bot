@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 from signalbot import ReadyHandler, SendMessage
 
+from llmbot.config import message
 from llmbot.store import KIND_BOT, Store, StoredMessage
 
 logger = logging.getLogger("llmbot.reminders")
@@ -79,7 +80,7 @@ class ReminderService(ReadyHandler):
         for r in self.store.due_reminders(now_ms):
             text = "⏰ " + r["message"]
             if now_ms - r["due_ts"] > LATE_AFTER_MS:
-                text += " (sorry, late: I was offline)"
+                text += " " + message(self.settings, "msg_reminder_late")
             try:
                 posted = await bot.messages.send(SendMessage(text=text), r["chat_id"])
             except Exception as e:  # signal-cli down, or the bot left the group: try again later, then give up

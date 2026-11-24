@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 from llmbot import prompts, reminders, webtools
 from llmbot.personas import Registry
-from llmbot.config import Settings
+from llmbot.config import MESSAGE_DEFAULTS, Settings, message
 from llmbot.context import fmt_time, format_message
 from llmbot.media import load_image, load_signal_image
 from llmbot.openrouter import OpenRouter, OpenRouterError, data_url
@@ -29,7 +29,7 @@ IMAGE_UNAVAILABLE = "Refused: image creation is disabled on this bot (empty IMAG
 ASPECT_RATIOS = {"1:1", "1:2", "2:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9", "9:21", "auto"}
 MAX_ROUNDS = 5
 # Said in the chat when the model's last word is still a tool call written as text.
-NO_FINAL_ANSWER = "I got lost in my tools on that one, ask me again."
+NO_FINAL_ANSWER = MESSAGE_DEFAULTS["msg_lost_in_tools"]  # the default; the page can change it
 # A tool call the model wrote as text instead of a real call: Qwen's XML form
 # (<tool_call><function=name><parameter=k>v</parameter></function></tool_call>) or JSON in <tool_call>.
 _TOOL_MARKUP = re.compile(r"<tool_call>.*?(?:</tool_call>|\Z)|<function=[^>]*>.*?(?:</function>|\Z)", re.S)
@@ -811,7 +811,7 @@ class Agent:
         result.text = re.sub(r"[ \t]*—[ \t]*", ", ", result.text)
         if "<tool_call>" in result.text or "<function=" in result.text:
             logger.warning("tool call markup in the final answer, removed: %s", result.text[:120])
-            result.text = strip_tool_markup(result.text) or ("" if result.images else NO_FINAL_ANSWER)
+            result.text = strip_tool_markup(result.text) or ("" if result.images else message(self.settings, "msg_lost_in_tools"))
         # the model sometimes copies the "[HH:MM] Name : " header of the transcript it was shown
         result.text = re.sub(rf"^\s*(\[\d{{1,2}}:\d{{2}}\]\s*)?{re.escape(self.settings.bot_name)}\s*:\s*", "",
                              result.text, flags=re.IGNORECASE)

@@ -443,3 +443,17 @@ def test_session_survives_a_restart_of_the_bot(admin):
     assert not again.valid_session("forged")
     again.logout(cookie)
     assert not AdminService(admin.live_, admin.env_, admin.store_, admin.llm_, admin.handler_).valid_session(cookie)
+
+
+def test_fixed_messages_are_editable_and_validated():
+    from llmbot import runtime_config as rc
+    from llmbot.config import MESSAGE_DEFAULTS, Settings, message
+    assert rc.coerce("msg_loading", " WA SAYEN A ZBI! ") == "WA SAYEN A ZBI!"
+    assert rc.coerce("msg_rate_limit", "Calme: {limit}/h") == "Calme: {limit}/h"
+    for bad in ("{nope}", "{limit", ""):
+        with pytest.raises(rc.ConfigError):
+            rc.coerce("msg_rate_limit" if bad else "msg_loading", bad)
+    base = Settings(signal_service="x", phone_number="+33600000000", local_base_url="http://x")
+    s = rc.apply(base, {"msg_loading": "WA SAYEN A ZBI!"})
+    assert message(s, "msg_loading") == "WA SAYEN A ZBI!"
+    assert message(base, "msg_rate_limit", limit=5) == MESSAGE_DEFAULTS["msg_rate_limit"].format(limit=5)

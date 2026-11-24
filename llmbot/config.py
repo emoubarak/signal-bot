@@ -15,6 +15,32 @@ def _bool(value: str | None, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+# The messages the bot posts by itself: key -> default text. The {names} each one may use are in MESSAGE_PLACEHOLDERS.
+MESSAGE_DEFAULTS = {
+    "msg_loading": "One moment, the model is loading or busy.",
+    "msg_rate_limit": "Slow down: {limit} requests per hour limit reached.",
+    "msg_cleared": "Done, starting fresh here: I forget everything said before. ({hidden} messages hidden, nothing deleted.)",
+    "msg_model_error": "The model did not answer ({error}).",
+    "msg_unexpected_error": "Unexpected error, try again in a moment.",
+    "msg_lost_in_tools": "I got lost in my tools on that one, ask me again.",
+    "msg_restarted": "I restarted, beep-boop, I am model {model} {where}.",
+    "msg_reminder_late": "(sorry, late: I was offline)",
+}
+MESSAGE_PLACEHOLDERS = {
+    "msg_rate_limit": ("limit",), "msg_cleared": ("hidden",), "msg_model_error": ("error",),
+    "msg_restarted": ("model", "where"),
+}
+
+
+def message(settings, key: str, **values) -> str:
+    """The text of a fixed message with its {names} filled in; the default text if the saved one cannot be."""
+    text = getattr(settings, key, None) or MESSAGE_DEFAULTS[key]
+    try:
+        return text.format(**values)
+    except (KeyError, IndexError, ValueError):
+        return MESSAGE_DEFAULTS[key].format(**values)
+
+
 @dataclass(frozen=True)
 class Settings:
     signal_service: str
@@ -85,6 +111,16 @@ class Settings:
 
     # Say "I restarted" in private to the owner.
     announce_startup: bool = True
+
+    # The fixed messages the bot posts itself, editable from the admin page ({names} are filled in).
+    msg_loading: str = MESSAGE_DEFAULTS["msg_loading"]
+    msg_rate_limit: str = MESSAGE_DEFAULTS["msg_rate_limit"]
+    msg_cleared: str = MESSAGE_DEFAULTS["msg_cleared"]
+    msg_model_error: str = MESSAGE_DEFAULTS["msg_model_error"]
+    msg_unexpected_error: str = MESSAGE_DEFAULTS["msg_unexpected_error"]
+    msg_lost_in_tools: str = MESSAGE_DEFAULTS["msg_lost_in_tools"]
+    msg_restarted: str = MESSAGE_DEFAULTS["msg_restarted"]
+    msg_reminder_late: str = MESSAGE_DEFAULTS["msg_reminder_late"]
 
     @property
     def local_chat(self) -> bool:

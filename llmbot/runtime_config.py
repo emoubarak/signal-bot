@@ -10,7 +10,7 @@ import re
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo, available_timezones
 
-from llmbot.config import Settings
+from llmbot.config import MESSAGE_DEFAULTS, MESSAGE_PLACEHOLDERS, Settings
 from llmbot.store import Store
 
 OVERRIDES_KEY = "config_overrides"
@@ -61,6 +61,8 @@ FIELDS: dict[str, Field] = {f.key: f for f in [
     Field("max_output_tokens", "int", minimum=50, maximum=8000),
     Field("describe_images", "bool"),
     Field("attachment_retention_days", "int", live=False, minimum=1, maximum=3650),
+    # fixed messages
+    *[Field(k, "message", allow_empty=False) for k in MESSAGE_DEFAULTS],
 ]}
 SECRETS = {k for k, f in FIELDS.items() if f.kind == "secret"}
 
@@ -98,6 +100,15 @@ def coerce(key: str, raw):
         if not f.allow_empty:
             raise ConfigError("This field cannot be empty.")
         return ""
+    if k == "message":
+        names = MESSAGE_PLACEHOLDERS.get(key, ())
+        try:
+            text.format(**{n: "x" for n in names})
+        except (KeyError, IndexError, ValueError):
+            usable = ", ".join("{" + n + "}" for n in names) or "none"
+            raise ConfigError(f"Only these placeholders can be used in this message: {usable}. "
+                              "Write a literal brace twice ({{ or }}).") from None
+        return text
     if k == "url":
         if not re.match(r"^https?://[^\s/]+", text):
             raise ConfigError("An address starting with http:// or https:// is expected.")

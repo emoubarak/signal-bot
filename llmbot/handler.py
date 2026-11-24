@@ -17,7 +17,7 @@ from signalbot import DataMessageContext, DataMessageHandler, EditMessage, Remot
 from llmbot import prompts, syncflag
 from llmbot.agent import Agent, AgentRequest
 from llmbot.personas import Registry
-from llmbot.config import Settings
+from llmbot.config import MESSAGE_DEFAULTS, Settings, message
 from llmbot.media import audio_for_model, foreign_script, is_audio, is_image, load_image, mp3_pieces, save_attachment
 from llmbot.openrouter import OpenRouter, OpenRouterError, data_url
 from llmbot.runtime_config import UUID_RE
@@ -38,7 +38,7 @@ MAX_DESCRIBED = 4
 DESCRIBE_BUDGET = 60  # seconds for all the descriptions of one message
 # A local model that has not started answering after this long is loading or busy: say so once.
 LOADING_NOTICE_SECONDS = 20
-LOADING_NOTICE = "One moment, the model is loading or busy."
+LOADING_NOTICE = MESSAGE_DEFAULTS["msg_loading"]  # the default; the page can change it
 # Window of the rate limit, in ms.
 LIMIT_WINDOW_MS = 3_600_000
 # The tag a description takes in a message's text (older rows have no description saved apart from it).
@@ -226,8 +226,7 @@ class LLMHandler(DataMessageHandler, RemoteDeleteHandler):
     async def _clear_context(self, c: DataMessageContext, rec: StoredMessage) -> None:
         hidden = self.store.clear_context(rec.chat_id, rec.ts)
         logger.info("[%s] context cleared by the owner (%d earlier messages hidden)", rec.chat_id[:12], hidden)
-        await self._say(c, rec, "Done, starting fresh here: I forget everything said before. "
-                                f"({hidden} messages hidden, nothing deleted.)")
+        await self._say(c, rec, message(self.settings, "msg_cleared", hidden=hidden))
 
     def _task_done(self, task: asyncio.Task) -> None:
         self._tasks.discard(task)
@@ -576,7 +575,7 @@ class LLMHandler(DataMessageHandler, RemoteDeleteHandler):
             if used >= limit:
                 if rec.author_id not in self._warned:
                     self._warned.add(rec.author_id)
-                    await self._say(c, rec, f"Slow down: {limit} requests per hour limit reached.")
+                    await self._say(c, rec, message(self.settings, "msg_rate_limit", limit=limit))
                 return None
             self._warned.discard(rec.author_id)
         return self._usage(c, kind, self.chat_model, 0.0)
@@ -586,7 +585,7 @@ class LLMHandler(DataMessageHandler, RemoteDeleteHandler):
     async def _loading_notice(self, c: DataMessageContext) -> None:
         await asyncio.sleep(LOADING_NOTICE_SECONDS)
         try:
-            await c.reply(SendMessage(text=LOADING_NOTICE))  # not stored: it is not an answer
+            await c.reply(SendMessage(text=message(self.settings, "msg_loading")))  # not stored: it is not an answer
         except Exception:
             logger.exception("loading notice failed")
 
@@ -625,11 +624,11 @@ class LLMHandler(DataMessageHandler, RemoteDeleteHandler):
             result = await self.agent.run(req, chat_model=self.chat_model)
         except OpenRouterError as e:
             logger.error("agent failed: %s", e)
-            await self._say(c, rec, f"The model did not answer ({e}).")
+            await self._say(c, rec, message(self.settings, "msg_model_error", error=e))
             return
         except Exception:
             logger.exception("agent failed")
-            await self._say(c, rec, "Unexpected error, try again in a moment.")
+            await self._say(c, rec, message(self.settings, "msg_unexpected_error"))
             return
         finally:
             if notice is not None:

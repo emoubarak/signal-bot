@@ -391,6 +391,14 @@ const DEF = {
   describe_images: ["Describe received images", "The bot summarises each image so it can summarise conversations better. One extra request per image."],
   announce_startup: ["Tell the owner at startup", "A private message at every restart, with the model in use."],
   attachment_retention_days: ["Keep attachments (days)", "Images and voice notes older than this are deleted at startup."],
+  msg_loading: ["Model loading", "Posted once when a local model has not started answering after 20 seconds."],
+  msg_rate_limit: ["Rate limit reached", "Posted once when someone is over the hourly limit. {limit} = the limit."],
+  msg_cleared: ["Memory wiped", "The reply to /clear. {hidden} = how many messages were hidden."],
+  msg_model_error: ["Model did not answer", "{error} = the reason the model gave."],
+  msg_unexpected_error: ["Unexpected error", "Posted when something unforeseen broke while answering."],
+  msg_lost_in_tools: ["Lost in its tools", "Posted when the model ends on a tool call instead of an answer."],
+  msg_restarted: ["Restart message to the owner", "{model} = the model in use, {where} = \u201clocally\u201d or \u201con OpenRouter\u201d."],
+  msg_reminder_late: ["Late reminder suffix", "Added after a reminder that was posted late because the bot was offline."],
 };
 const TRY = {
   web_search: ["A search", "Premier League table"], read_page: ["A link", "https://example.com"],
@@ -659,6 +667,8 @@ function pageBehavior() {
       h("div", { class: "grid2" }, textField("rate_limit_per_hour"), textField("images_per_day"))),
     h("div", { class: "card stack" }, h("div", null, h("h3", null, "Memory and replies")),
       h("div", { class: "grid2" }, textField("context_messages"), textField("max_output_tokens")), boolField("describe_images")),
+    h("div", { class: "card stack" }, h("div", null, h("h3", null, "Fixed messages"), h("p", { class: "lead" }, "What the bot posts by itself, not written by the model. Words in {braces} are filled in.")),
+      ...Object.keys(S.fields).filter(k => k.startsWith("msg_")).map(k => textField(k))),
     h("div", { class: "card stack" }, h("div", null, h("h3", null, "Startup")),
       boolField("announce_startup"), textField("attachment_retention_days")),
     h("div", { class: "card stack" }, h("div", null, h("h3", null, "Maintenance"), h("p", { class: "lead" }, "A restart lets the bot finish the replies in progress. It comes back by itself when it runs in a container.")),

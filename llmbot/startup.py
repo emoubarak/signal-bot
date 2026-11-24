@@ -12,7 +12,7 @@ from pathlib import PurePath
 
 from signalbot import ReadyHandler, SendMessage
 
-from llmbot.config import Settings
+from llmbot.config import Settings, message
 from llmbot.openrouter import OpenRouter, OpenRouterError
 
 logger = logging.getLogger("llmbot.startup")
@@ -49,7 +49,7 @@ class StartupAnnouncer(ReadyHandler):
     async def _announcement(self) -> str:
         model = await self._served_model()
         where = "locally" if self.settings.local_chat else "on OpenRouter"
-        return f"I restarted, beep-boop, I am model {model} {where}."
+        return message(self.settings, "msg_restarted", model=model, where=where)
 
     async def handle_ready(self, context) -> None:
         # The owner's private chat only: no group announcement, so restarts
