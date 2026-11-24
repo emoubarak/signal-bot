@@ -4,6 +4,8 @@ import os
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from llmbot.prompts import PERSONALITY
+
 
 def _list(value: str | None) -> list[str]:
     return [v.strip() for v in (value or "").split(",") if v.strip()]
@@ -111,6 +113,9 @@ class Settings:
 
     # Say "I restarted" in private to the owner.
     announce_startup: bool = True
+
+    # The bot's character, in its system prompt. Editable from the admin page.
+    personality: str = PERSONALITY.strip()
 
     # The fixed messages the bot posts itself, editable from the admin page ({names} are filled in).
     msg_loading: str = MESSAGE_DEFAULTS["msg_loading"]

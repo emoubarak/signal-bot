@@ -457,3 +457,19 @@ def test_fixed_messages_are_editable_and_validated():
     s = rc.apply(base, {"msg_loading": "WA SAYEN A ZBI!"})
     assert message(s, "msg_loading") == "WA SAYEN A ZBI!"
     assert message(base, "msg_rate_limit", limit=5) == MESSAGE_DEFAULTS["msg_rate_limit"].format(limit=5)
+
+
+def test_personality_is_editable_and_reaches_the_system_prompt():
+    from dataclasses import replace
+    from zoneinfo import ZoneInfo
+    from llmbot import runtime_config as rc
+    from llmbot.agent import Agent, AgentRequest
+    from llmbot.config import Settings
+    from llmbot.personas import Registry
+    assert rc.coerce("personality", "  Be mean.  ") == "Be mean."
+    with pytest.raises(rc.ConfigError):
+        rc.coerce("personality", "")
+    base = Settings(signal_service="x", phone_number="+33600000000", local_base_url="http://x")
+    req = AgentRequest(chat_id="g", chat_name=None, user_id="u", thread=[], window=[], quoted=None, images_remaining=1)
+    system = Agent(replace(base, personality="Be mean, always."), None, None, Registry([]), ZoneInfo("UTC"))._system(req)
+    assert "Be mean, always." in system and "sharp and sarcastic" not in system

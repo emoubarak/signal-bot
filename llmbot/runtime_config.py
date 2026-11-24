@@ -61,6 +61,7 @@ FIELDS: dict[str, Field] = {f.key: f for f in [
     Field("max_output_tokens", "int", minimum=50, maximum=8000),
     Field("describe_images", "bool"),
     Field("attachment_retention_days", "int", live=False, minimum=1, maximum=3650),
+    Field("personality", "longtext", allow_empty=False),
     # fixed messages
     *[Field(k, "message", allow_empty=False) for k in MESSAGE_DEFAULTS],
 ]}
@@ -100,6 +101,10 @@ def coerce(key: str, raw):
         if not f.allow_empty:
             raise ConfigError("This field cannot be empty.")
         return ""
+    if k == "longtext":
+        if len(text) > 6000:
+            raise ConfigError("At most 6000 characters.")
+        return text
     if k == "message":
         names = MESSAGE_PLACEHOLDERS.get(key, ())
         try:

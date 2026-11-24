@@ -387,7 +387,7 @@ class Agent:
             f"You are {s.bot_name}, a participant{where} on Signal. People address you by calling your name, "
             "by mentioning you, by replying to one of your messages or in private. You understand the request in "
             "natural language and you do exactly what is asked, without asking for confirmation when it is clear.\n"
-            + prompts.PERSONALITY + "\n"
+            + "\n" + (s.personality or prompts.PERSONALITY).strip() + "\n\n"
             "What you can do:\n"
             + "\n".join(can) + "\n\n"
             + (("Tool rules, always followed:\n" + "\n".join(rules) + "\n\n") if rules else "")
